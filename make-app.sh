@@ -24,7 +24,12 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 SIGN_KC="$HOME/.config/mac-rec/signing.keychain-db"
 if security find-identity -v -p codesigning "$SIGN_KC" 2>/dev/null | grep -q "mac-rec-signing"; then
     security unlock-keychain -p "mac-rec-local-signing" "$SIGN_KC"
-    codesign --force --sign "mac-rec-signing" --keychain "$SIGN_KC" "$APP"
+    # codesign only searches keychains on the search list; add ours once.
+    if ! security list-keychains -d user | grep -q "mac-rec/signing.keychain"; then
+        # shellcheck disable=SC2046
+        security list-keychains -d user -s $(security list-keychains -d user | tr -d '"') "$SIGN_KC"
+    fi
+    codesign --force --sign "mac-rec-signing" "$APP"
     echo "signed with mac-rec-signing (permissions survive rebuilds)"
 elif IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
         | awk -F'"' '/"/ {print $2; exit}')" && [ -n "$IDENTITY" ]; then
