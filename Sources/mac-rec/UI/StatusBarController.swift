@@ -8,6 +8,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let menu = NSMenu()
     /// (index in SCShareableContent.displays order, label) — refreshed on menu open.
     private var displays: [(Int, String)] = []
+    /// (CGWindowID, label) — refreshed on menu open.
+    private var windows: [(UInt32, String)] = []
 
     init(proxy: RecorderProxy) {
         self.proxy = proxy
@@ -67,9 +69,23 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 holder.submenu = sub
                 menu.addItem(holder)
             }
+            menu.addItem(key(makeItem("Record Area…", #selector(startArea)), "a"))
+            if !windows.isEmpty {
+                let sub = NSMenu()
+                for (wid, label) in windows {
+                    let it = NSMenuItem(title: label, action: #selector(startWindow(_:)), keyEquivalent: "")
+                    it.target = self
+                    it.tag = Int(wid)
+                    sub.addItem(it)
+                }
+                let holder = NSMenuItem(title: "Record Window", action: nil, keyEquivalent: "")
+                holder.submenu = sub
+                menu.addItem(holder)
+            }
             menu.addItem(.separator())
             menu.addItem(check(makeItem("Capture Microphone", #selector(toggleMic)), "captureMic"))
             menu.addItem(check(makeItem("Capture System Audio", #selector(toggleSystemAudio)), "captureSystemAudio"))
+            addPermissionItems()
 
         case "recording":
             menu.addItem(disabled("Recording — \(fmtDuration(s.liveSeconds))  (\(s.source ?? ""))"))
@@ -95,7 +111,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(makeItem("Open Recordings Folder", #selector(openFolder)))
-        menu.addItem(disabled("Hotkeys: ⌃⌥⌘R record/pause · ⌃⌥⌘← rewind · ⌃⌥⌘S save"))
+        menu.addItem(disabled("Hotkeys: ⌃⌥⌘R record/pause · ⌃⌥⌘A area · ⌃⌥⌘← rewind · ⌃⌥⌘S save"))
         menu.addItem(.separator())
         menu.addItem(makeItem("Quit mac-rec UI", #selector(quit)))
     }
@@ -104,10 +120,45 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         Task {
             guard let content = try? await SCShareableContent
                 .excludingDesktopWindows(false, onScreenWindowsOnly: true) else { return }
-            let list = content.displays.enumerated().map { (i, d) in
+            let displayList = content.displays.enumerated().map { (i, d) in
                 (i, "Display \(i + 1) — \(d.width)×\(d.height)\(d.displayID == CGMainDisplayID() ? " (main)" : "")")
             }
-            await MainActor.run { self.displays = list }
+            let ownPID = ProcessInfo.processInfo.processIdentifier
+            let windowList = content.windows
+                .filter {
+                    $0.isOnScreen && $0.frame.width >= 200 && $0.frame.height >= 150
+                        && $0.owningApplication?.processID != ownPID
+                        && $0.title?.isEmpty == false
+                }
+                .sorted { ($0.owningApplication?.applicationName ?? "") < ($1.owningApplication?.applicationName ?? "") }
+                .prefix(20)
+                .map { w in
+                    (w.windowID, "\(w.owningApplication?.applicationName ?? "?") — \(shorten(w.title ?? ""))")
+                }
+            await MainActor.run {
+                self.displays = displayList
+                self.windows = Array(windowList)
+                // Live-update the open menu so submenus appear on first click.
+                self.rebuildMenu(for: self.proxy.status)
+            }
+        }
+    }
+
+    private nonisolated func shorten(_ s: String) -> String {
+        s.count > 45 ? String(s.prefix(44)) + "…" : s
+    }
+
+    private func addPermissionItems() {
+        let needScreen = !Permissions.screenGranted
+        let needMic = !Permissions.micGranted
+            && (UserDefaults.standard.object(forKey: "captureMic") as? Bool ?? true)
+        guard needScreen || needMic else { return }
+        menu.addItem(.separator())
+        if needScreen {
+            menu.addItem(makeItem("⚠️ Grant Screen Recording…", #selector(grantScreen)))
+        }
+        if needMic {
+            menu.addItem(makeItem("⚠️ Grant Microphone…", #selector(grantMic)))
         }
     }
 
@@ -142,6 +193,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func startMain() { proxy.startRecording(display: nil) }
     @objc private func startDisplay(_ sender: NSMenuItem) { proxy.startRecording(display: sender.tag) }
+    @objc private func startWindow(_ sender: NSMenuItem) { proxy.startWindow(windowID: UInt32(sender.tag)) }
+
+    @objc private func startArea() {
+        let proxy = self.proxy
+        AreaSelector.begin { selection in
+            guard let selection else { return }
+            proxy.startArea(displayID: selection.displayID, rect: selection.rect)
+        }
+    }
+
+    @objc private func grantScreen() { Permissions.requestScreen(proxy: proxy) }
+    @objc private func grantMic() { Permissions.requestMic() }
     @objc private func pause() { proxy.pause() }
     @objc private func resume() { proxy.resume() }
     @objc private func rewind10() { proxy.rewind(seconds: 10) }

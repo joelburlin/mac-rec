@@ -47,18 +47,89 @@ final class RecorderProxy {
 
     // MARK: - Commands (fire and refresh; errors surface as alerts)
 
+    private func baseOptions() -> StartOptions {
+        var opts = StartOptions()
+        opts.mic = UserDefaults.standard.object(forKey: "captureMic") as? Bool ?? true
+        opts.systemAudio = UserDefaults.standard.object(forKey: "captureSystemAudio") as? Bool ?? true
+        opts.excludeAppPIDs = [ProcessInfo.processInfo.processIdentifier]
+        return opts
+    }
+
+    /// Screen-recording TCC gate: opens the repair flow instead of letting the
+    /// daemon fail with an opaque SCK error.
+    @MainActor
+    private func preflight() -> Bool {
+        guard Permissions.screenGranted else {
+            let alert = NSAlert()
+            alert.messageText = "Mac-Rec needs Screen Recording permission"
+            alert.informativeText = "Enable Mac-Rec in System Settings → Privacy & Security → Screen & System Audio Recording. The recorder restarts itself once granted."
+            alert.addButton(withTitle: "Open System Settings")
+            alert.addButton(withTitle: "Cancel")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                Permissions.requestScreen(proxy: self)
+            }
+            return false
+        }
+        if opts_micEnabled() && !Permissions.micGranted {
+            Permissions.requestMic()  // native prompt / settings; recording proceeds without blocking
+        }
+        return true
+    }
+
+    private func opts_micEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: "captureMic") as? Bool ?? true
+    }
+
+    @MainActor
     func startRecording(display: Int?) {
-        let opts = StartOptions(
-            source: "fullscreen",
-            display: display,
-            mic: UserDefaults.standard.object(forKey: "captureMic") as? Bool ?? true,
-            systemAudio: UserDefaults.standard.object(forKey: "captureSystemAudio") as? Bool ?? true,
-            title: nil,
-            excludeAppPIDs: [ProcessInfo.processInfo.processIdentifier]
+        guard preflight() else { return }
+        var opts = baseOptions()
+        opts.display = display
+        start(opts)
+    }
+
+    @MainActor
+    func startWindow(windowID: UInt32) {
+        guard preflight() else { return }
+        var opts = baseOptions()
+        opts.source = "window"
+        opts.windowID = windowID
+        start(opts)
+    }
+
+    @MainActor
+    func startArea(displayID: UInt32, rect: CGRect) {
+        guard preflight() else { return }
+        var opts = baseOptions()
+        opts.displayID = displayID
+        opts.area = AreaRect(
+            x: rect.origin.x, y: rect.origin.y,
+            width: rect.width, height: rect.height
         )
+        start(opts)
+    }
+
+    private func start(_ opts: StartOptions) {
         run("start recording") {
             try self.client.ensureRunning()
             _ = try self.client.post("/start", body: opts, as: StatusInfo.self, timeout: 30)
+        }
+    }
+
+    /// Quit + respawn the daemon (used after a Screen Recording grant, which
+    /// only applies to freshly launched processes). No-op mid-recording.
+    func restartDaemon() {
+        queue.async {
+            if let st = try? self.client.get("/status", as: StatusInfo.self, timeout: 3),
+               st.state != "idle" { return }
+            _ = try? self.client.post("/quit", body: Optional<Int>.none, as: [String: String].self, timeout: 5)
+            for _ in 0..<20 {
+                if !self.client.isRunning() { break }
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+            try? self.client.ensureRunning()
+            self.refresh()
         }
     }
 
@@ -101,6 +172,7 @@ final class RecorderProxy {
 
     /// One hotkey drives the whole flow: idle → start, recording → pause,
     /// paused → resume.
+    @MainActor
     func smartToggle() {
         switch status.state {
         case "idle": startRecording(display: nil)

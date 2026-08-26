@@ -67,10 +67,18 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
         let scale = filter.pointPixelScale
         width = max(2, Int(filter.contentRect.width * CGFloat(scale)) & ~1)
         height = max(2, Int(filter.contentRect.height * CGFloat(scale)) & ~1)
+        if let area = opts.area {
+            width = max(2, Int(area.width * Double(scale)) & ~1)
+            height = max(2, Int(area.height * Double(scale)) & ~1)
+        }
 
         let sc = SCStreamConfiguration()
         sc.width = width
         sc.height = height
+        if let area = opts.area {
+            sc.sourceRect = CGRect(x: area.x, y: area.y, width: area.width, height: area.height)
+            sourceDescription += String(format: " area %.0f×%.0f@%.0f,%.0f", area.width, area.height, area.x, area.y)
+        }
         sc.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(cfg.fps))
         sc.showsCursor = true
         sc.pixelFormat = kCVPixelFormatType_32BGRA
@@ -314,7 +322,12 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
             let displays = content.displays
             guard !displays.isEmpty else { throw APIError(500, "no displays found") }
             let display: SCDisplay
-            if let idx = opts.display {
+            if let did = opts.displayID {
+                guard let d = displays.first(where: { $0.displayID == did }) else {
+                    throw APIError(400, "no display with id \(did)")
+                }
+                display = d
+            } else if let idx = opts.display {
                 guard idx >= 0, idx < displays.count else {
                     throw APIError(400, "display index \(idx) out of range (have \(displays.count))")
                 }
@@ -333,8 +346,16 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
             return (filter, "display \(display.displayID) (\(display.width)x\(display.height))")
 
         case "window", "app":
+            if let wid = opts.windowID {
+                guard let win = content.windows.first(where: { $0.windowID == wid }) else {
+                    throw APIError(404, "no on-screen window with id \(wid)")
+                }
+                let filter = SCContentFilter(desktopIndependentWindow: win)
+                let label = "\(win.owningApplication?.applicationName ?? "?"): \(win.title ?? "untitled")"
+                return (filter, "window \(label)")
+            }
             guard let q = opts.query?.lowercased(), !q.isEmpty else {
-                throw APIError(400, "source=\(opts.source) requires --query")
+                throw APIError(400, "source=\(opts.source) requires --query or --window-id")
             }
             let candidates = content.windows.filter { w in
                 guard w.isOnScreen, w.frame.width >= 100, w.frame.height >= 100 else { return false }

@@ -3,12 +3,14 @@ import Carbon.HIToolbox
 
 /// System-wide hotkeys via Carbon RegisterEventHotKey — works from an
 /// accessory app with no Accessibility permission:
-///   ⌃⌥⌘R  start / pause / resume        ⌃⌥⌘←  rewind 10s        ⌃⌥⌘S  stop & save
+///   ⌃⌥⌘R  start / pause / resume    ⌃⌥⌘A  record area
+///   ⌃⌥⌘←  rewind 10s               ⌃⌥⌘S  stop & save
 final class HotkeyManager {
     enum Action: UInt32 {
         case toggle = 1
         case stop = 2
         case rewind = 3
+        case area = 4
     }
 
     var onAction: ((Action) -> Void)?
@@ -53,6 +55,7 @@ final class HotkeyManager {
         register(keyCode: UInt32(kVK_ANSI_R), modifiers: mods, action: .toggle)
         register(keyCode: UInt32(kVK_ANSI_S), modifiers: mods, action: .stop)
         register(keyCode: UInt32(kVK_LeftArrow), modifiers: mods, action: .rewind)
+        register(keyCode: UInt32(kVK_ANSI_A), modifiers: mods, action: .area)
     }
 
     private func register(keyCode: UInt32, modifiers: UInt32, action: Action) {

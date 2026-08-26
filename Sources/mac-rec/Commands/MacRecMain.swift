@@ -46,6 +46,15 @@ struct Start: ParsableCommand {
     @Option(help: "Display index for fullscreen (see `mac-rec list`). Default: main display.")
     var display: Int?
 
+    @Option(name: .customLong("display-id"), help: "Exact CGDirectDisplayID (see `mac-rec list`).")
+    var displayID: UInt32?
+
+    @Option(name: .customLong("window-id"), help: "Exact CGWindowID for source=window (see `mac-rec list`).")
+    var windowID: UInt32?
+
+    @Option(help: "Region capture \"x,y,w,h\" in display points, top-left origin (with --display/--display-id).")
+    var area: String?
+
     @Option(help: "Window title / app name substring for window and app sources.")
     var query: String?
 
@@ -62,7 +71,15 @@ struct Start: ParsableCommand {
     var json = false
 
     func run() throws {
-        let opts = StartOptions(
+        var areaRect: AreaRect?
+        if let area {
+            let parts = area.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard parts.count == 4, parts[2] > 0, parts[3] > 0 else {
+                throw ValidationError("--area must be \"x,y,w,h\" with positive w/h")
+            }
+            areaRect = AreaRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3])
+        }
+        var opts = StartOptions(
             source: source,
             display: display,
             query: query,
@@ -70,6 +87,10 @@ struct Start: ParsableCommand {
             systemAudio: !noSystemAudio,
             title: title
         )
+        opts.displayID = displayID
+        opts.windowID = windowID
+        opts.area = areaRect
+        if windowID != nil, opts.source == "fullscreen" { opts.source = "window" }
         let status = try withClient { try $0.post("/start", body: opts, as: StatusInfo.self, timeout: 30) }
         printJSONOrText(status, json: json) {
             "● recording \(status.source ?? "") — session \(status.sessionId ?? "?")\n  \(status.sessionDir ?? "")"

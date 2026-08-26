@@ -47,6 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .toggle: self.proxy.smartToggle()
             case .stop: if self.proxy.status.state != "idle" { self.proxy.stopAndSave() }
             case .rewind: if self.proxy.status.state != "idle" { self.proxy.rewind(seconds: 10) }
+            case .area:
+                guard self.proxy.status.state == "idle" else { return }
+                let proxy = self.proxy
+                AreaSelector.begin { selection in
+                    guard let selection else { return }
+                    proxy.startArea(displayID: selection.displayID, rect: selection.rect)
+                }
             }
         }
         self.hotkeys = hotkeys

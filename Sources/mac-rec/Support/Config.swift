@@ -1,6 +1,6 @@
 import Foundation
 
-let macRecVersion = "0.1.0"
+let macRecVersion = "0.2.0"
 
 struct Config: Codable {
     var port: Int = 5757

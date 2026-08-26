@@ -14,7 +14,7 @@ struct ListSources: AsyncParsableCommand {
     func run() async throws {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
-        print("displays:")
+        print("displays:  (use --display INDEX or --display-id ID)")
         for (i, d) in content.displays.enumerated() {
             let main = d.displayID == CGMainDisplayID() ? "  (main)" : ""
             print("  [\(i)] id=\(d.displayID) \(d.width)x\(d.height)\(main)")
@@ -36,7 +36,7 @@ struct ListSources: AsyncParsableCommand {
         for w in windows {
             let app = w.owningApplication?.applicationName ?? "?"
             let title = w.title?.isEmpty == false ? w.title! : "(untitled)"
-            print("  \(app) — \(title)  [\(Int(w.frame.width))x\(Int(w.frame.height))]")
+            print("  id=\(w.windowID)  \(app) — \(title)  [\(Int(w.frame.width))x\(Int(w.frame.height))]")
         }
     }
 }

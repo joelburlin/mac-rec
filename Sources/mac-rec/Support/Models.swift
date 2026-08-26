@@ -2,11 +2,26 @@ import Foundation
 
 // MARK: - API request/response types (shared by CLI client and daemon)
 
+/// Free-style capture region, in display points, top-left origin, relative to
+/// the chosen display (matches SCStreamConfiguration.sourceRect).
+struct AreaRect: Codable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+}
+
 struct StartOptions: Codable {
     /// "fullscreen" | "window" | "app"
     var source: String = "fullscreen"
     /// Display index (order of SCShareableContent.displays); nil = main display.
     var display: Int?
+    /// Exact display by CGDirectDisplayID — wins over `display` when set.
+    var displayID: UInt32?
+    /// Exact window by CGWindowID (source "window") — wins over `query`.
+    var windowID: UInt32?
+    /// Crop the display capture to this region ("area" recording).
+    var area: AreaRect?
     /// Title / app-name substring for window and app sources.
     var query: String?
     var mic: Bool = true

@@ -61,7 +61,21 @@ struct DaemonClient {
     }
 
     /// Ensure a daemon is up, spawning `mac-rec serve` detached if needed.
+    /// A daemon from an older build is restarted (only when idle) so new
+    /// request fields are never silently ignored.
     func ensureRunning() throws {
+        if let health = try? get("/health", as: [String: String].self, timeout: 2) {
+            if health["version"] == macRecVersion { return }
+            guard let st = try? get("/status", as: StatusInfo.self, timeout: 3), st.state == "idle" else {
+                return  // active recording on the old daemon — don't kill it
+            }
+            log("daemon version \(health["version"] ?? "?") != \(macRecVersion); restarting")
+            _ = try? post("/quit", body: Optional<Int>.none, as: [String: String].self, timeout: 5)
+            for _ in 0..<20 {
+                if !isRunning() { break }
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+        }
         if isRunning() { return }
 
         guard let exe = Bundle.main.executableURL else {
