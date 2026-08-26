@@ -13,6 +13,9 @@ struct StartOptions: Codable {
     var systemAudio: Bool = true
     /// Optional slug used in the session directory name.
     var title: String?
+    /// PIDs whose windows are excluded from display capture (the UI app passes
+    /// its own pid so the floating HUD never appears in the recording).
+    var excludeAppPIDs: [Int32]?
 }
 
 struct StopOptions: Codable {

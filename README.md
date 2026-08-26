@@ -42,6 +42,32 @@ mac-rec stop --output ./screencast.mp4   # ■ concat → compress → captions 
   final.srt / .vtt / .txt
 ```
 
+## UI (menu bar + floating HUD + hotkeys)
+
+```bash
+./make-app.sh            # builds + installs /Applications/Mac-Rec.app
+open /Applications/Mac-Rec.app
+```
+
+- **Menu bar**: record full screen / pick a display, mic + system-audio
+  toggles, pause/resume/rewind/stop, open recordings folder. The icon shows a
+  live timer while recording.
+- **Floating HUD**: a draggable pill (● 0:42 ⏸ ⏪ ■) appears while recording —
+  CleanShot-style. It is automatically **excluded from the capture** (the
+  daemon filters this app's windows out of the display filter).
+- **Global hotkeys** (work everywhere, no Accessibility permission needed):
+  - `⌃⌥⌘R` — start → pause → resume (one key drives the flow)
+  - `⌃⌥⌘←` — rewind 10s (auto-pauses if recording)
+  - `⌃⌥⌘S` — stop & save (Finder reveals the file when done)
+- `mac-rec ui` runs the same UI from a terminal (TCC then attributes to the
+  terminal, not the app — prefer the .app).
+
+The app is a thin shell over the same daemon the CLI uses: an agent can drive
+a recording while the HUD shows it, and vice versa. Launching the app starts
+the daemon under the **app's** TCC identity — grant Screen Recording +
+Microphone to "Mac-Rec" once and every client benefits. Add the app to Login
+Items to keep the daemon always ready.
+
 ## CLI
 
 | Command | Notes |
@@ -113,7 +139,8 @@ External tools used at finalize (not needed during capture): `ffmpeg`,
 
 ## Roadmap
 
-- Menu-bar app (SwiftUI) speaking the same daemon API: record/pause buttons,
-  live-rewind slider over the fragment timeline, CleanShot-style.
+- Live-rewind slider in the HUD (scrub the fragment timeline while paused,
+  instead of fixed 10s/30s steps).
 - Signed-URL uploads for private buckets (currently plain object URL).
 - Frame-exact trim via smart re-encode of the boundary GOPs only.
+- Configurable hotkeys.

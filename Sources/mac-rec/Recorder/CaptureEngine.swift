@@ -322,7 +322,14 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
             } else {
                 display = displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? displays[0]
             }
-            let filter = SCContentFilter(display: display, excludingWindows: [])
+            let excludedApps = content.applications.filter {
+                (opts.excludeAppPIDs ?? []).contains($0.processID)
+            }
+            let filter = SCContentFilter(
+                display: display,
+                excludingApplications: excludedApps,
+                exceptingWindows: []
+            )
             return (filter, "display \(display.displayID) (\(display.width)x\(display.height))")
 
         case "window", "app":

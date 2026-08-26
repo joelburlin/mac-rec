@@ -1,7 +1,6 @@
 import Foundation
 import ArgumentParser
 
-@main
 struct MacRec: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "mac-rec",
