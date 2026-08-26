@@ -16,23 +16,26 @@ mkdir -p "$APP/Contents/MacOS"
 cp .build/release/mac-rec "$APP/Contents/MacOS/mac-rec"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
-# Prefer a real signing identity: its TCC grants survive rebuilds. With ad-hoc
-# signing, TCC pins the exact binary hash, so every reinstall needs re-granting.
-IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
-    | awk -F'"' '/"/ {print $2; exit}')"
-if [ -n "$IDENTITY" ]; then
+# Sign with a stable identity so TCC grants survive rebuilds. Preference:
+# 1. the dedicated mac-rec signing keychain (./setup-signing.sh creates it)
+# 2. any codesigning identity in the default keychains
+# 3. ad-hoc (grants break on every install; TCC entries reset to avoid
+#    dead toggles in System Settings)
+SIGN_KC="$HOME/.config/mac-rec/signing.keychain-db"
+if security find-identity -v -p codesigning "$SIGN_KC" 2>/dev/null | grep -q "mac-rec-signing"; then
+    security unlock-keychain -p "mac-rec-local-signing" "$SIGN_KC"
+    codesign --force --sign "mac-rec-signing" --keychain "$SIGN_KC" "$APP"
+    echo "signed with mac-rec-signing (permissions survive rebuilds)"
+elif IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+        | awk -F'"' '/"/ {print $2; exit}')" && [ -n "$IDENTITY" ]; then
     codesign --force --options runtime --sign "$IDENTITY" "$APP"
     echo "signed with: $IDENTITY (permissions survive rebuilds)"
 else
     codesign --force --sign - "$APP" >/dev/null 2>&1
-    # A fresh ad-hoc hash invalidates old grants — clear the stale TCC entries
-    # so System Settings doesn't show a toggle that silently doesn't apply.
     tccutil reset ScreenCapture "$BUNDLE_ID" >/dev/null 2>&1 || true
     tccutil reset Microphone "$BUNDLE_ID" >/dev/null 2>&1 || true
-    echo "WARNING: ad-hoc signed — Screen Recording + Microphone must be re-granted"
-    echo "         after every install. Create a self-signed code-signing cert"
-    echo "         (Keychain Access → Certificate Assistant → Create a Certificate,"
-    echo "         type: Code Signing) and rerun; this script will pick it up."
+    echo "WARNING: ad-hoc signed — permissions must be re-granted after every"
+    echo "         install. Run ./setup-signing.sh once to fix this for good."
 fi
 
 # Refresh the CLI symlink to the same build.

@@ -1,4 +1,5 @@
 import Foundation
+import IOKit.pwr_mgt
 
 /// The daemon's recording state machine. One recording session at a time;
 /// each record→pause cycle is a "run" (its own fragment directory), rewind
@@ -15,6 +16,10 @@ actor RecorderController {
     private var engine: CaptureEngine?
     private var activeDisplayID: UInt32?
     private var runIndex = 0
+    private var lastEvent: String?
+    /// Display-sleep prevention while recording — a sleeping display kills
+    /// the SCK stream (that's how a "30-minute take" becomes 4 minutes).
+    private var sleepAssertion: IOPMAssertionID = 0
 
     init(cfg: Config) {
         self.cfg = cfg
@@ -45,6 +50,8 @@ actor RecorderController {
         meta = m
         sessionDir = dir
         state = .recording
+        lastEvent = nil
+        acquireSleepAssertion()
         try persistMeta()
         log("session \(id) started: \(eng.sourceDescription) \(eng.width)x\(eng.height)@\(cfg.fps)")
         return statusInfo()
@@ -55,6 +62,7 @@ actor RecorderController {
         try await endCurrentRun()
         state = .paused
         meta?.state = "paused"
+        releaseSleepAssertion()
         try persistMeta()
         return statusInfo()
     }
@@ -65,6 +73,8 @@ actor RecorderController {
         _ = try await launchRun(opts: opts, sessionDir: dir)
         state = .recording
         meta?.state = "recording"
+        lastEvent = nil
+        acquireSleepAssertion()
         try persistMeta()
         return statusInfo()
     }
@@ -111,6 +121,8 @@ actor RecorderController {
         case .recording: try await endCurrentRun()
         case .paused: break
         }
+        releaseSleepAssertion()
+        lastEvent = nil
         guard let m = meta, let dir = sessionDir else { throw APIError(500, "no session") }
         guard m.recordedSeconds > 0.05, m.segmentCount > 0 else {
             state = .idle
@@ -167,6 +179,7 @@ actor RecorderController {
         guard state == .recording, engine === dead else { return }
         log("capture stream died (\(error.localizedDescription)) — auto-pausing session")
         try? await pause()
+        lastEvent = "capture interrupted (\(error.localizedDescription)) — auto-paused, footage kept"
     }
 
     private func endCurrentRun() async throws {
@@ -193,6 +206,7 @@ actor RecorderController {
             source: engine?.sourceDescription ?? meta?.options.source,
             displayID: state == .idle ? nil : activeDisplayID,
             micLevel: (state == .recording && (meta?.options.mic ?? false)) ? engine?.micLevel : nil,
+            lastEvent: lastEvent,
             recordedSeconds: recorded,
             liveSeconds: live,
             segmentCount: meta?.segmentCount ?? 0,
@@ -204,6 +218,29 @@ actor RecorderController {
         guard let meta, let sessionDir else { return }
         let url = sessionDir.appendingPathComponent("meta.json")
         try JSONEncoder.pretty.encode(meta).write(to: url)
+    }
+
+    private func acquireSleepAssertion() {
+        guard sleepAssertion == 0 else { return }
+        var id: IOPMAssertionID = 0
+        let ok = IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventUserIdleDisplaySleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            "mac-rec is recording the screen" as CFString,
+            &id
+        )
+        if ok == kIOReturnSuccess {
+            sleepAssertion = id
+        } else {
+            log("failed to acquire display-sleep assertion (\(ok))")
+        }
+    }
+
+    private func releaseSleepAssertion() {
+        if sleepAssertion != 0 {
+            IOPMAssertionRelease(sleepAssertion)
+            sleepAssertion = 0
+        }
     }
 
     private static func timestamp() -> String {

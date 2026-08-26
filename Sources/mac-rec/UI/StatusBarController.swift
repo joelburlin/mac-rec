@@ -108,6 +108,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         case "paused":
             menu.addItem(disabled("Paused — \(fmtDuration(s.recordedSeconds)) kept"))
+            if let event = s.lastEvent {
+                menu.addItem(disabled("⚠️ \(event)"))
+            }
             menu.addItem(.separator())
             menu.addItem(shortcut(makeItem("Stop & Save", #selector(stop)), .stop))
             menu.addItem(shortcut(makeItem("Resume", #selector(resume)), .toggle))

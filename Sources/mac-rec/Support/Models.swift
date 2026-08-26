@@ -63,6 +63,9 @@ struct StatusInfo: Codable {
     var displayID: UInt32?
     /// Live mic input level 0…1 (peak-decayed), nil when mic is off.
     var micLevel: Double?
+    /// Human-readable note about the last notable event (e.g. why the
+    /// session auto-paused). Cleared on start/resume.
+    var lastEvent: String?
     /// Seconds of footage currently kept on disk (finished segments).
     var recordedSeconds: Double
     /// Estimated seconds including the in-flight run (while recording).

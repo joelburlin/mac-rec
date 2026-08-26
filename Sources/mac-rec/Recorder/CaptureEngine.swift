@@ -309,13 +309,22 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
         }
     }
 
-    /// RMS → dB → 0…1 with peak decay, sampled sparsely for cheapness.
+    private var micFormatLogged = false
+
+    /// RMS → dB → 0…1 with time-based peak decay (half-life ~0.35s so the UI
+    /// poll actually catches speech), sampled sparsely for cheapness.
     private func updateMicLevel(_ sb: CMSampleBuffer) {
         guard let fmt = CMSampleBufferGetFormatDescription(sb),
-              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmt)?.pointee,
-              asbd.mBitsPerChannel == 32,
-              (asbd.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmt)?.pointee
         else { return }
+        let isFloat32 = asbd.mBitsPerChannel == 32 && (asbd.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        let isInt16 = asbd.mBitsPerChannel == 16 && (asbd.mFormatFlags & kAudioFormatFlagIsFloat) == 0
+        if !micFormatLogged {
+            micFormatLogged = true
+            log("mic format: \(asbd.mBitsPerChannel)-bit \(isFloat32 ? "float" : "int"), "
+                + "\(Int(asbd.mSampleRate))Hz, \(asbd.mChannelsPerFrame)ch")
+        }
+        guard isFloat32 || isInt16 else { return }
 
         let abl = AudioBufferList.allocate(maximumBuffers: 8)
         defer { free(abl.unsafeMutablePointer) }
@@ -336,22 +345,38 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
         var count = 0
         for buf in abl {
             guard let data = buf.mData else { continue }
-            let n = Int(buf.mDataByteSize) / MemoryLayout<Float>.size
-            let p = data.bindMemory(to: Float.self, capacity: n)
-            var i = 0
-            while i < n {
-                let v = p[i]
-                sum += v * v
-                count += 1
-                i += 4
+            if isFloat32 {
+                let n = Int(buf.mDataByteSize) / MemoryLayout<Float>.size
+                let p = data.bindMemory(to: Float.self, capacity: n)
+                var i = 0
+                while i < n {
+                    let v = p[i]
+                    sum += v * v
+                    count += 1
+                    i += 4
+                }
+            } else {
+                let n = Int(buf.mDataByteSize) / MemoryLayout<Int16>.size
+                let p = data.bindMemory(to: Int16.self, capacity: n)
+                var i = 0
+                while i < n {
+                    let v = Float(p[i]) / 32768
+                    sum += v * v
+                    count += 1
+                    i += 4
+                }
             }
         }
         guard count > 0 else { return }
         let rms = (sum / Float(count)).squareRoot()
         let db = 20 * log10(max(rms, 1e-7))
         let norm = Double(max(0, min(1, (db + 50) / 50)))
+        // Decay by elapsed time, not per buffer — buffers arrive every ~10ms
+        // and a per-buffer factor emptied the meter between UI polls.
+        let bufDur = max(0.005, CMSampleBufferGetDuration(sb).seconds)
+        let decay = pow(0.5, bufDur / 0.35)
         micLevelLock.lock()
-        _micLevel = max(norm, _micLevel * 0.75)
+        _micLevel = max(norm, _micLevel * decay)
         micLevelLock.unlock()
     }
 

@@ -82,7 +82,10 @@ struct DaemonClient {
             throw APIError(500, "cannot locate own executable to spawn the daemon")
         }
         try FileManager.default.createDirectory(at: Config.configDir, withIntermediateDirectories: true)
-        FileManager.default.createFile(atPath: Config.daemonLog.path, contents: nil)
+        // Append — truncating here erased the log history on every restart.
+        if !FileManager.default.fileExists(atPath: Config.daemonLog.path) {
+            FileManager.default.createFile(atPath: Config.daemonLog.path, contents: nil)
+        }
         let logHandle = try FileHandle(forWritingTo: Config.daemonLog)
         logHandle.seekToEndOfFile()
 
