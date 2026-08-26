@@ -25,9 +25,12 @@ final class RecorderProxy {
 
     func startPolling() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.refresh()
         }
+        // .common keeps polling alive while menus or modal panels are open.
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     func refresh() {
@@ -47,6 +50,9 @@ final class RecorderProxy {
                 }
             }
             DispatchQueue.main.async {
+                if self.status.state != s.state {
+                    Self.uiLog("state: \(self.status.state) → \(s.state)")
+                }
                 self.status = s
                 self.onChange?(s)
             }
@@ -54,15 +60,20 @@ final class RecorderProxy {
     }
 
     /// Breadcrumbs for the bundled app, whose stderr goes nowhere useful.
+    /// Serialized: concurrent appends from the poll queue and main thread
+    /// clobber each other otherwise.
+    private static let logQueue = DispatchQueue(label: "mac-rec.uilog")
     static func uiLog(_ msg: String) {
         let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(msg)\n"
-        let url = Config.configDir.appendingPathComponent("ui.log")
-        if let h = try? FileHandle(forWritingTo: url) {
-            h.seekToEndOfFile()
-            h.write(Data(line.utf8))
-            try? h.close()
-        } else {
-            try? Data(line.utf8).write(to: url)
+        logQueue.async {
+            let url = Config.configDir.appendingPathComponent("ui.log")
+            if let h = try? FileHandle(forWritingTo: url) {
+                defer { try? h.close() }
+                _ = try? h.seekToEnd()
+                try? h.write(contentsOf: Data(line.utf8))
+            } else {
+                try? Data(line.utf8).write(to: url)
+            }
         }
     }
 
@@ -158,7 +169,9 @@ final class RecorderProxy {
         run("pause") { _ = try self.client.post("/pause", body: Optional<Int>.none, as: StatusInfo.self) }
     }
 
+    @MainActor
     func resume() {
+        guard preflight() else { return }  // resume opens a new capture stream
         run("resume") { _ = try self.client.post("/resume", body: Optional<Int>.none, as: StatusInfo.self, timeout: 30) }
     }
 
