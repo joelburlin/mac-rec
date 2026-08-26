@@ -8,8 +8,8 @@ struct MacRec: AsyncParsableCommand {
         version: macRecVersion,
         subcommands: [
             Start.self, Pause.self, Resume.self, Rewind.self, Stop.self,
-            Status.self, ListSources.self, Serve.self, Setup.self,
-            ShowConfig.self, Quit.self,
+            FinalizeCmd.self, Status.self, ListSources.self, Serve.self,
+            Setup.self, ShowConfig.self, Quit.self,
         ]
     )
 }

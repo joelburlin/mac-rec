@@ -151,8 +151,20 @@ actor RecorderController {
         let runDir = sessionDir.appendingPathComponent("runs/\(runName)", isDirectory: true)
         let eng = CaptureEngine(runDir: runDir, runName: runName, cfg: cfg, opts: opts)
         try await eng.start()
+        eng.onStopped = { [weak self] error in
+            Task { await self?.streamDied(engine: eng, error: error) }
+        }
         engine = eng
         return eng
+    }
+
+    /// The system killed the capture (user hit the OS stop control, display
+    /// slept, ...). Auto-pause so we never keep "recording" a dead stream —
+    /// footage up to this point is kept and the session can resume or stop.
+    private func streamDied(engine dead: CaptureEngine, error: Error) async {
+        guard state == .recording, engine === dead else { return }
+        log("capture stream died (\(error.localizedDescription)) — auto-pausing session")
+        try? await pause()
     }
 
     private func endCurrentRun() async throws {

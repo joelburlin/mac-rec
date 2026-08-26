@@ -37,6 +37,20 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
     private var segments: [SegmentMeta] = []
     private var micSegments: [SegmentMeta] = []
     private var streamError: Error?
+    private var stoppedNotified = false
+    private var notReadyDrops = 0
+
+    /// SCK only delivers frames when content changes; during static stretches
+    /// the last frame is re-appended so the video timeline stays continuous
+    /// (otherwise audio outruns video and static time collapses).
+    private var lastImageBuffer: CVImageBuffer?
+    private var lastFormatDesc: CMFormatDescription?
+    private var lastVideoPTS: CMTime = .invalid
+    private var repeatTimer: DispatchSourceTimer?
+
+    /// Fired once (on an internal queue) if the stream dies out from under us —
+    /// e.g. the user hits the system screen-sharing stop control.
+    var onStopped: ((Error) -> Void)?
 
     private(set) var width = 0
     private(set) var height = 0
@@ -105,6 +119,12 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
         }
         try await stream.startCapture()
         self.stream = stream
+
+        let t = DispatchSource.makeTimerSource(queue: writerQueue)
+        t.schedule(deadline: .now() + 1, repeating: .milliseconds(500))
+        t.setEventHandler { [weak self] in self?.repeatLastFrameIfStalled() }
+        t.resume()
+        repeatTimer = t
     }
 
     private func setupWriter() throws {
@@ -170,6 +190,11 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
                 startWriterSession(at: sb.presentationTimeStamp)
             }
             append(sb, to: videoIn)
+            if let img = CMSampleBufferGetImageBuffer(sb) {
+                lastImageBuffer = img
+                lastFormatDesc = CMSampleBufferGetFormatDescription(sb)
+                lastVideoPTS = sb.presentationTimeStamp
+            }
         case .audio:
             guard sessionStarted, sb.presentationTimeStamp >= sessionStartPTS else { return }
             append(sb, to: sysAudioIn)
@@ -215,16 +240,58 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
     }
 
     private func append(_ sb: CMSampleBuffer, to input: AVAssetWriterInput?) {
-        guard let input, input.isReadyForMoreMediaData else { return }
+        guard let input else { return }
+        guard input.isReadyForMoreMediaData else {
+            notReadyDrops += 1
+            if notReadyDrops % 100 == 1 {
+                log("dropping samples: writer input not ready (\(notReadyDrops) so far)")
+            }
+            return
+        }
         if !input.append(sb) {
             streamError = writer?.error ?? APIError(500, "sample append failed")
             log("append failed: \(String(describing: writer?.error))")
         }
     }
 
+    /// On writerQueue. Re-encode the previous frame with a fresh timestamp
+    /// when SCK has gone quiet (static screen content).
+    private func repeatLastFrameIfStalled() {
+        guard sessionStarted, streamError == nil,
+              let img = lastImageBuffer, let fmt = lastFormatDesc,
+              let input = videoIn, input.isReadyForMoreMediaData,
+              lastVideoPTS.isValid
+        else { return }
+        let now = CMClockGetTime(CMClockGetHostTimeClock())
+        guard now.seconds - lastVideoPTS.seconds > 0.9 else { return }
+
+        var timing = CMSampleTimingInfo(
+            duration: CMTime(value: 1, timescale: CMTimeScale(cfg.fps)),
+            presentationTimeStamp: now,
+            decodeTimeStamp: .invalid
+        )
+        var sb: CMSampleBuffer?
+        let status = CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: img,
+            formatDescription: fmt,
+            sampleTiming: &timing,
+            sampleBufferOut: &sb
+        )
+        if status == noErr, let sb, input.append(sb) {
+            lastVideoPTS = now
+        }
+    }
+
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        writerQueue.async { self.streamError = error }
         log("stream stopped with error: \(error.localizedDescription)")
+        writerQueue.async {
+            self.streamError = error
+            if !self.stoppedNotified {
+                self.stoppedNotified = true
+                self.onStopped?(error)
+            }
+        }
     }
 
     // MARK: - Segment output
@@ -272,6 +339,8 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
 
     /// Stop capture, finish the writer, and return this run's metadata.
     func stop() async throws -> RunMeta {
+        repeatTimer?.cancel()
+        repeatTimer = nil
         if let stream {
             try? await stream.stopCapture()
         }

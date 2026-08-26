@@ -85,13 +85,16 @@ struct Finalizer {
         let runFiles = (micUsable && fullFiles.count == normFiles.count) ? fullFiles : normFiles
         if runFiles == normFiles { micUsable = false }
 
-        // 2. Lossless concat into the master.
+        // 2. Lossless concat into the master. `-map 0` is load-bearing: without
+        //    it ffmpeg's default stream selection keeps only ONE audio stream
+        //    and the mic track silently disappears.
         let master = sessionDir.appendingPathComponent("master.mp4")
         if runFiles.count == 1 {
             try? fm.removeItem(at: master)
             try Shell.runChecked("ffmpeg", [
                 "-hide_banner", "-y",
                 "-i", runFiles[0].path,
+                "-map", "0",
                 "-c", "copy", "-movflags", "+faststart",
                 master.path,
             ])
@@ -105,6 +108,7 @@ struct Finalizer {
                 "-hide_banner", "-y",
                 "-f", "concat", "-safe", "0",
                 "-i", listFile.path,
+                "-map", "0",
                 "-c", "copy", "-movflags", "+faststart",
                 master.path,
             ])
@@ -123,8 +127,10 @@ struct Finalizer {
             notes.append("trim is stream-copy: cut points snap to ~\(Int(cfg.segmentSeconds))s keyframes")
         }
 
-        let hasSys = keptRuns.first?.hasSystemAudio ?? false
-        let hasMic = micUsable
+        // Trust the file over the metadata: count the audio streams actually
+        // present in the source before wiring any filtergraph.
+        let audioCount = probeAudioStreamCount(source)
+        let hasMic = micUsable && audioCount >= 2
 
         // 4. Final encode. Default: HEVC VideoToolbox constant quality, audio
         //    tracks mixed down to one AAC track for shareability.
@@ -134,10 +140,11 @@ struct Finalizer {
                         "-map", "0:v:0",
                         "-c:v", "hevc_videotoolbox", "-q:v", String(cfg.compressQuality),
                         "-tag:v", "hvc1"]
-            if hasSys && hasMic {
-                args += ["-filter_complex", "[0:a:0][0:a:1]amix=inputs=2:duration=longest:normalize=0[a]",
+            if audioCount >= 2 {
+                let inputs = (0..<audioCount).map { "[0:a:\($0)]" }.joined()
+                args += ["-filter_complex", "\(inputs)amix=inputs=\(audioCount):duration=longest:normalize=0[a]",
                          "-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
-            } else if hasSys || hasMic {
+            } else if audioCount == 1 {
                 args += ["-map", "0:a:0", "-c:a", "aac", "-b:a", "192k"]
             }
             args += ["-movflags", "+faststart", final.path]
@@ -151,10 +158,10 @@ struct Finalizer {
 
         // 5. Transcription from the mic track (falls back to system audio).
         var srt: String?, vtt: String?, txt: String?
-        if opts.transcribe, hasMic || hasSys {
+        if opts.transcribe, audioCount > 0 {
             if let model = cfg.resolveWhisperModel() {
                 do {
-                    let micTrackIndex = (hasSys && hasMic) ? 1 : 0
+                    let micTrackIndex = hasMic ? audioCount - 1 : 0
                     let wav = sessionDir.appendingPathComponent("speech16k.wav")
                     try Shell.runChecked("ffmpeg", [
                         "-hide_banner", "-y",
@@ -251,6 +258,17 @@ struct Finalizer {
         for seg in segments {
             try handle.write(contentsOf: Data(contentsOf: dir.appendingPathComponent(seg.file)))
         }
+    }
+
+    private func probeAudioStreamCount(_ url: URL) -> Int {
+        guard let r = try? Shell.run("ffprobe", [
+            "-v", "error",
+            "-select_streams", "a",
+            "-show_entries", "stream=index",
+            "-of", "csv=p=0",
+            url.path,
+        ]), r.status == 0 else { return 0 }
+        return r.stdout.split(separator: "\n").filter { !$0.isEmpty }.count
     }
 
     private func probeDuration(_ url: URL) -> Double? {
