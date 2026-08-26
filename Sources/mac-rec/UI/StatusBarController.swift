@@ -82,6 +82,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 holder.submenu = sub
                 menu.addItem(holder)
             }
+            // Transport controls stay visible (grayed) so the shortcuts are
+            // discoverable before the first recording.
+            menu.addItem(.separator())
+            menu.addItem(shortcut(disabled("Stop & Save"), .stop))
+            menu.addItem(shortcut(disabled("Pause"), .toggle))
+            menu.addItem(shortcut(disabled("Rewind 10s"), .rewind))
             menu.addItem(.separator())
             menu.addItem(check(makeItem("Capture Microphone", #selector(toggleMic)), "captureMic"))
             menu.addItem(check(makeItem("Capture System Audio", #selector(toggleSystemAudio)), "captureSystemAudio"))

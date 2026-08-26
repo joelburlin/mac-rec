@@ -13,6 +13,7 @@ actor RecorderController {
     private var meta: SessionMeta?
     private var sessionDir: URL?
     private var engine: CaptureEngine?
+    private var activeDisplayID: UInt32?
     private var runIndex = 0
 
     init(cfg: Config) {
@@ -155,6 +156,7 @@ actor RecorderController {
             Task { await self?.streamDied(engine: eng, error: error) }
         }
         engine = eng
+        activeDisplayID = eng.capturedDisplayID
         return eng
     }
 
@@ -189,6 +191,7 @@ actor RecorderController {
             sessionId: meta?.id,
             sessionDir: sessionDir?.path,
             source: engine?.sourceDescription ?? meta?.options.source,
+            displayID: state == .idle ? nil : activeDisplayID,
             recordedSeconds: recorded,
             liveSeconds: live,
             segmentCount: meta?.segmentCount ?? 0,

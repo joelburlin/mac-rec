@@ -67,7 +67,6 @@ final class HUDController {
             stack.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
         ])
 
-        panel.setFrameAutosaveName("mac-rec.hud")
     }
 
     private func configure(_ button: NSButton, symbol: String, tip: String, action: Selector) {
@@ -121,14 +120,21 @@ final class HUDController {
 
     private func show() {
         guard !panel.isVisible else { return }
-        if panel.frameAutosaveName.isEmpty || !panel.setFrameUsingName("mac-rec.hud") {
-            centerBottom()
-        }
+        centerBottom(on: screenBeingRecorded())
         panel.orderFrontRegardless()
     }
 
-    private func centerBottom() {
-        guard let screen = NSScreen.main else { return }
+    /// The pill belongs on the display being captured, not wherever the main
+    /// screen happens to be. (It's excluded from the capture either way.)
+    private func screenBeingRecorded() -> NSScreen? {
+        guard let did = proxy.status.displayID else { return NSScreen.main }
+        return NSScreen.screens.first {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == did
+        } ?? NSScreen.main
+    }
+
+    private func centerBottom(on screen: NSScreen?) {
+        guard let screen else { return }
         let f = screen.visibleFrame
         panel.setFrameOrigin(NSPoint(
             x: f.midX - panel.frame.width / 2,

@@ -45,8 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             switch action {
             case .toggle: self.proxy.smartToggle()
-            case .stop: if self.proxy.status.state != "idle" { self.proxy.stopAndSave() }
-            case .rewind: if self.proxy.status.state != "idle" { self.proxy.rewind(seconds: 10) }
+            case .stop: self.proxy.stopAndSave(quietIfIdle: true)
+            case .rewind: self.proxy.rewind(seconds: 10, quiet: true)
             case .area:
                 guard self.proxy.status.state == "idle" else { return }
                 let proxy = self.proxy

@@ -18,6 +18,8 @@ final class RecorderProxy {
     var onSaved: ((FinalResult?) -> Void)?
 
     private var timer: Timer?
+    /// Tracks reachability transitions so ui.log records them exactly once.
+    private var daemonReachable: Bool?
 
     // MARK: - Polling
 
@@ -30,18 +32,37 @@ final class RecorderProxy {
 
     func refresh() {
         queue.async {
-            let s: StatusInfo
-            if self.client.isRunning(),
-               let fetched = try? self.client.get("/status", as: StatusInfo.self, timeout: 3) {
-                s = fetched
-            } else {
-                s = StatusInfo(state: "idle", recordedSeconds: 0, liveSeconds: 0,
+            var s = StatusInfo(state: "idle", recordedSeconds: 0, liveSeconds: 0,
                                segmentCount: 0, runCount: 0)
+            do {
+                s = try self.client.get("/status", as: StatusInfo.self, timeout: 3)
+                if self.daemonReachable != true {
+                    self.daemonReachable = true
+                    Self.uiLog("daemon reachable (state=\(s.state))")
+                }
+            } catch {
+                if self.daemonReachable != false {
+                    self.daemonReachable = false
+                    Self.uiLog("status fetch FAILED: \(error.localizedDescription)")
+                }
             }
             DispatchQueue.main.async {
                 self.status = s
                 self.onChange?(s)
             }
+        }
+    }
+
+    /// Breadcrumbs for the bundled app, whose stderr goes nowhere useful.
+    static func uiLog(_ msg: String) {
+        let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(msg)\n"
+        let url = Config.configDir.appendingPathComponent("ui.log")
+        if let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile()
+            h.write(Data(line.utf8))
+            try? h.close()
+        } else {
+            try? Data(line.utf8).write(to: url)
         }
     }
 
@@ -142,8 +163,8 @@ final class RecorderProxy {
     }
 
     /// Rewind; auto-pauses first when still recording.
-    func rewind(seconds: Double) {
-        run("rewind") {
+    func rewind(seconds: Double, quiet: Bool = false) {
+        run("rewind", quiet: quiet) {
             let s = try self.client.get("/status", as: StatusInfo.self)
             if s.state == "recording" {
                 _ = try self.client.post("/pause", body: Optional<Int>.none, as: StatusInfo.self)
@@ -152,7 +173,9 @@ final class RecorderProxy {
         }
     }
 
-    func stopAndSave() {
+    /// `quietIfIdle` suppresses the "nothing to stop" alert so the stop hotkey
+    /// can always fire the request without trusting cached state.
+    func stopAndSave(quietIfIdle: Bool = false) {
         queue.async {
             do {
                 let result = try self.client.post(
@@ -160,9 +183,12 @@ final class RecorderProxy {
                 )
                 DispatchQueue.main.async { self.onSaved?(result) }
             } catch {
+                let benign = (error as? APIError)?.status == 409
                 DispatchQueue.main.async {
                     self.onSaved?(nil)
-                    Self.showError("stop & save failed", error)
+                    if !(quietIfIdle && benign) {
+                        Self.showError("stop & save failed", error)
+                    }
                 }
             }
             self.refresh()
@@ -171,14 +197,30 @@ final class RecorderProxy {
     }
 
     /// One hotkey drives the whole flow: idle → start, recording → pause,
-    /// paused → resume.
+    /// paused → resume. State is fetched fresh from the daemon, never trusted
+    /// from the poll cache.
     @MainActor
     func smartToggle() {
-        switch status.state {
-        case "idle": startRecording(display: nil)
-        case "recording": pause()
-        case "paused": resume()
-        default: break
+        guard preflight() else { return }
+        let opts = baseOptions()
+        queue.async {
+            let state = (try? self.client.get("/status", as: StatusInfo.self, timeout: 3))?.state ?? "idle"
+            do {
+                switch state {
+                case "recording":
+                    _ = try self.client.post("/pause", body: Optional<Int>.none, as: StatusInfo.self)
+                case "paused":
+                    _ = try self.client.post("/resume", body: Optional<Int>.none, as: StatusInfo.self, timeout: 30)
+                case "finalizing":
+                    break
+                default:
+                    try self.client.ensureRunning()
+                    _ = try self.client.post("/start", body: opts, as: StatusInfo.self, timeout: 30)
+                }
+            } catch {
+                DispatchQueue.main.async { Self.showError("record toggle failed", error) }
+            }
+            self.refresh()
         }
     }
 
@@ -186,12 +228,15 @@ final class RecorderProxy {
         queue.async { try? self.client.ensureRunning() }
     }
 
-    private func run(_ label: String, _ body: @escaping () throws -> Void) {
+    private func run(_ label: String, quiet: Bool = false, _ body: @escaping () throws -> Void) {
         queue.async {
             do {
                 try body()
             } catch {
-                DispatchQueue.main.async { Self.showError(label + " failed", error) }
+                let benign = (error as? APIError)?.status == 409
+                if !(quiet && benign) {
+                    DispatchQueue.main.async { Self.showError(label + " failed", error) }
+                }
             }
             self.refresh()
         }

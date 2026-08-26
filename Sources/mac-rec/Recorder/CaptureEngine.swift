@@ -55,6 +55,7 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
     private(set) var width = 0
     private(set) var height = 0
     private(set) var sourceDescription = ""
+    private(set) var capturedDisplayID: UInt32?
     let startedAt = Date()
 
     init(runDir: URL, runName: String, cfg: Config, opts: StartOptions) {
@@ -75,8 +76,9 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
         _ = CGMainDisplayID()
 
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        let (filter, desc) = try Self.makeFilter(content: content, opts: opts)
+        let (filter, desc, displayID) = try Self.makeFilter(content: content, opts: opts)
         sourceDescription = desc
+        capturedDisplayID = displayID
 
         let scale = filter.pointPixelScale
         width = max(2, Int(filter.contentRect.width * CGFloat(scale)) & ~1)
@@ -385,7 +387,7 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
 
     // MARK: - Source resolution
 
-    static func makeFilter(content: SCShareableContent, opts: StartOptions) throws -> (SCContentFilter, String) {
+    static func makeFilter(content: SCShareableContent, opts: StartOptions) throws -> (SCContentFilter, String, UInt32?) {
         switch opts.source {
         case "fullscreen", "display", "screen":
             let displays = content.displays
@@ -412,7 +414,7 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
                 excludingApplications: excludedApps,
                 exceptingWindows: []
             )
-            return (filter, "display \(display.displayID) (\(display.width)x\(display.height))")
+            return (filter, "display \(display.displayID) (\(display.width)x\(display.height))", UInt32(display.displayID))
 
         case "window", "app":
             if let wid = opts.windowID {
@@ -421,7 +423,7 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
                 }
                 let filter = SCContentFilter(desktopIndependentWindow: win)
                 let label = "\(win.owningApplication?.applicationName ?? "?"): \(win.title ?? "untitled")"
-                return (filter, "window \(label)")
+                return (filter, "window \(label)", nil)
             }
             guard let q = opts.query?.lowercased(), !q.isEmpty else {
                 throw APIError(400, "source=\(opts.source) requires --query or --window-id")
@@ -438,7 +440,7 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
             }
             let filter = SCContentFilter(desktopIndependentWindow: win)
             let label = "\(win.owningApplication?.applicationName ?? "?"): \(win.title ?? "untitled")"
-            return (filter, "window \(label)")
+            return (filter, "window \(label)", nil)
 
         default:
             throw APIError(400, "unknown source \"\(opts.source)\" (use fullscreen|window|app)")

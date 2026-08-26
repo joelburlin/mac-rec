@@ -53,6 +53,9 @@ struct StatusInfo: Codable {
     var sessionId: String?
     var sessionDir: String?
     var source: String?
+    /// CGDirectDisplayID of the display being captured (nil for window sources)
+    /// — lets the UI put the floating HUD on the right screen.
+    var displayID: UInt32?
     /// Seconds of footage currently kept on disk (finished segments).
     var recordedSeconds: Double
     /// Estimated seconds including the in-flight run (while recording).
