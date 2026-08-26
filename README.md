@@ -49,14 +49,18 @@ mac-rec stop --output ./screencast.mp4   # ■ concat → compress → captions 
 open /Applications/Mac-Rec.app
 ```
 
-- **Menu bar**: record full screen / pick a display, mic + system-audio
-  toggles, pause/resume/rewind/stop, open recordings folder. The icon shows a
-  live timer while recording.
+- **Menu bar**: record full screen, a display, a specific window, or a
+  free-style **area** (drag-select overlay, Esc cancels); mic + system-audio
+  toggles; pause/resume/rewind/stop; open recordings folder. The icon shows a
+  live timer while recording. Missing permissions surface as ⚠️ menu items
+  that deep-link the right System Settings pane — screen access auto-restarts
+  the daemon once granted.
 - **Floating HUD**: a draggable pill (● 0:42 ⏸ ⏪ ■) appears while recording —
   CleanShot-style. It is automatically **excluded from the capture** (the
   daemon filters this app's windows out of the display filter).
 - **Global hotkeys** (work everywhere, no Accessibility permission needed):
   - `⌃⌥⌘R` — start → pause → resume (one key drives the flow)
+  - `⌃⌥⌘A` — record an area (drag-select)
   - `⌃⌥⌘←` — rewind 10s (auto-pauses if recording)
   - `⌃⌥⌘S` — stop & save (Finder reveals the file when done)
 - `mac-rec ui` runs the same UI from a terminal (TCC then attributes to the
@@ -72,7 +76,7 @@ Items to keep the daemon always ready.
 
 | Command | Notes |
 |---|---|
-| `mac-rec start` | `--source fullscreen\|window\|app`, `--display N`, `--query "Chrome"`, `--no-mic`, `--no-system-audio`, `--title slug` |
+| `mac-rec start` | `--source fullscreen\|window\|app`, `--display N` / `--display-id ID`, `--query "Chrome"` / `--window-id ID`, `--area "x,y,w,h"` (display points, top-left origin), `--no-mic`, `--no-system-audio`, `--title slug` |
 | `mac-rec pause` / `resume` | pause finishes the current run; resume starts a new one |
 | `mac-rec rewind <sec>` | paused only; drops **at least** that many seconds, fragment-granular (~2s) |
 | `mac-rec stop` | `--output PATH`, `--trim-start S`, `--trim-end S`, `--no-compress`, `--no-transcribe`, `--upload` / `--no-upload` |
