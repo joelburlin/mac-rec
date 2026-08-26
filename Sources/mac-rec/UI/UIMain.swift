@@ -40,7 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
 
-        let hotkeys = HotkeyManager()
+        let hotkeys = HotkeyManager(bindings: HotkeyMap.bindings)
         hotkeys.onAction = { [weak self] action in
             guard let self else { return }
             switch action {

@@ -239,7 +239,7 @@ struct Quit: ParsableCommand {
             print("daemon not running")
             return
         }
-        _ = try? client.post("/quit", body: Optional<Int>.none, as: [String: String].self, timeout: 5)
+        _ = try client.post("/quit", body: Optional<Int>.none, as: [String: String].self, timeout: 5)
         for _ in 0..<20 {
             if !client.isRunning() { break }
             Thread.sleep(forTimeInterval: 0.2)

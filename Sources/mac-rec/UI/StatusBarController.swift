@@ -56,7 +56,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         switch s.state {
         case "idle":
-            menu.addItem(key(makeItem("Record Full Screen", #selector(startMain)), "r"))
+            menu.addItem(shortcut(makeItem("Record Full Screen", #selector(startMain)), .toggle))
             if displays.count > 1 {
                 let sub = NSMenu()
                 for (idx, label) in displays {
@@ -69,7 +69,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 holder.submenu = sub
                 menu.addItem(holder)
             }
-            menu.addItem(key(makeItem("Record Area…", #selector(startArea)), "a"))
+            menu.addItem(shortcut(makeItem("Record Area…", #selector(startArea)), .area))
             if !windows.isEmpty {
                 let sub = NSMenu()
                 for (wid, label) in windows {
@@ -90,17 +90,17 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case "recording":
             menu.addItem(disabled("Recording — \(fmtDuration(s.liveSeconds))  (\(s.source ?? ""))"))
             menu.addItem(.separator())
-            menu.addItem(key(makeItem("Pause", #selector(pause)), "r"))
-            menu.addItem(key(makeItem("Rewind 10s (pauses)", #selector(rewind10)), String(UnicodeScalar(NSLeftArrowFunctionKey)!)))
-            menu.addItem(key(makeItem("Stop & Save", #selector(stop)), "s"))
+            menu.addItem(shortcut(makeItem("Stop & Save", #selector(stop)), .stop))
+            menu.addItem(shortcut(makeItem("Pause", #selector(pause)), .toggle))
+            menu.addItem(shortcut(makeItem("Rewind 10s (pauses)", #selector(rewind10)), .rewind))
 
         case "paused":
             menu.addItem(disabled("Paused — \(fmtDuration(s.recordedSeconds)) kept"))
             menu.addItem(.separator())
-            menu.addItem(key(makeItem("Resume", #selector(resume)), "r"))
-            menu.addItem(key(makeItem("Rewind 10s", #selector(rewind10)), String(UnicodeScalar(NSLeftArrowFunctionKey)!)))
+            menu.addItem(shortcut(makeItem("Stop & Save", #selector(stop)), .stop))
+            menu.addItem(shortcut(makeItem("Resume", #selector(resume)), .toggle))
+            menu.addItem(shortcut(makeItem("Rewind 10s", #selector(rewind10)), .rewind))
             menu.addItem(makeItem("Rewind 30s", #selector(rewind30)))
-            menu.addItem(key(makeItem("Stop & Save", #selector(stop)), "s"))
 
         case "finalizing":
             menu.addItem(disabled("Saving… (compress + captions)"))
@@ -111,7 +111,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(makeItem("Open Recordings Folder", #selector(openFolder)))
-        menu.addItem(disabled("Hotkeys: ⌃⌥⌘R record/pause · ⌃⌥⌘A area · ⌃⌥⌘← rewind · ⌃⌥⌘S save"))
+        menu.addItem(disabled(
+            "Hotkeys: \(HotkeyMap.display(.toggle)) record/pause · \(HotkeyMap.display(.area)) area · "
+            + "\(HotkeyMap.display(.rewind)) rewind · \(HotkeyMap.display(.stop)) save"
+        ))
         menu.addItem(.separator())
         menu.addItem(makeItem("Quit mac-rec UI", #selector(quit)))
     }
@@ -170,9 +173,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         return it
     }
 
-    private func key(_ it: NSMenuItem, _ k: String) -> NSMenuItem {
-        it.keyEquivalent = k
-        it.keyEquivalentModifierMask = [.control, .option, .command]
+    private func shortcut(_ it: NSMenuItem, _ action: HotkeyManager.Action) -> NSMenuItem {
+        guard let hk = HotkeyMap.bindings[action] else { return it }
+        it.keyEquivalent = hk.menuKeyEquivalent
+        it.keyEquivalentModifierMask = hk.menuModifiers
         return it
     }
 

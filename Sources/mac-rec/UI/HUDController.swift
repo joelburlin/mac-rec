@@ -47,9 +47,12 @@ final class HUDController {
         timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
         timeLabel.textColor = .labelColor
 
-        configure(pauseButton, symbol: "pause.fill", tip: "Pause / Resume (⌃⌥⌘R)", action: #selector(pauseResume))
-        configure(rewindButton, symbol: "gobackward.10", tip: "Rewind 10s (⌃⌥⌘←)", action: #selector(rewind))
-        configure(stopButton, symbol: "stop.fill", tip: "Stop & Save (⌃⌥⌘S)", action: #selector(stop))
+        configure(pauseButton, symbol: "pause.fill",
+                  tip: "Pause / Resume (\(HotkeyMap.display(.toggle)))", action: #selector(pauseResume))
+        configure(rewindButton, symbol: "gobackward.10",
+                  tip: "Rewind 10s (\(HotkeyMap.display(.rewind)))", action: #selector(rewind))
+        configure(stopButton, symbol: "stop.fill",
+                  tip: "Stop & Save (\(HotkeyMap.display(.stop)))", action: #selector(stop))
 
         let stack = NSStackView(views: [dot, timeLabel, pauseButton, rewindButton, stopButton])
         stack.orientation = .horizontal

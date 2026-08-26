@@ -19,6 +19,22 @@ struct Config: Codable {
     var gcsPrefix: String = "screencasts"
     /// Base URL for share links. Defaults to https://storage.googleapis.com/<bucket>.
     var gcsPublicBase: String?
+    /// UI hotkey overrides, e.g. {"toggle": "cmd+shift+2"}. Format:
+    /// modifiers (cmd/opt/ctrl/shift) + one key (a-z, 0-9, f1-f12, arrows,
+    /// space), joined with "+". Restart the UI app to apply.
+    var hotkeys: [String: String]?
+
+    static let defaultHotkeys: [String: String] = [
+        "toggle": "opt+cmd+r",   // start / pause / resume
+        "area": "opt+cmd+a",     // drag-select area recording
+        "rewind": "opt+cmd+left",
+        "stop": "opt+cmd+s",     // stop & save
+    ]
+
+    /// Effective bindings: defaults overridden by config.
+    func hotkeyBindings() -> [String: String] {
+        Config.defaultHotkeys.merging(hotkeys ?? [:]) { _, override in override }
+    }
 
     static var configDir: URL {
         FileManager.default.homeDirectoryForCurrentUser

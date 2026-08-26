@@ -59,10 +59,16 @@ open /Applications/Mac-Rec.app
   CleanShot-style. It is automatically **excluded from the capture** (the
   daemon filters this app's windows out of the display filter).
 - **Global hotkeys** (work everywhere, no Accessibility permission needed):
-  - `⌃⌥⌘R` — start → pause → resume (one key drives the flow)
-  - `⌃⌥⌘A` — record an area (drag-select)
-  - `⌃⌥⌘←` — rewind 10s (auto-pauses if recording)
-  - `⌃⌥⌘S` — stop & save (Finder reveals the file when done)
+  - `⌥⌘R` — start → pause → resume (one key drives the flow)
+  - `⌥⌘A` — record an area (drag-select)
+  - `⌥⌘←` — rewind 10s (auto-pauses if recording)
+  - `⌥⌘S` — stop & save (Finder reveals the file when done)
+
+  Rebind in `~/.config/mac-rec/config.json` (restart the app to apply), e.g.:
+  ```json
+  "hotkeys": { "toggle": "cmd+shift+2", "stop": "cmd+shift+3" }
+  ```
+  Format: `cmd`/`opt`/`ctrl`/`shift` + one key (a–z, 0–9, f1–f12, arrows, space).
 - `mac-rec ui` runs the same UI from a terminal (TCC then attributes to the
   terminal, not the app — prefer the .app).
 

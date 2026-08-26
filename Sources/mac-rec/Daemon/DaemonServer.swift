@@ -54,6 +54,14 @@ final class DaemonServer {
                     : try JSONDecoder.api.decode(StopOptions.self, from: req.body)
                 return .json(try await controller.stop(opts))
             case ("POST", "/quit"):
+                // Never let an installer/upgrade kill a live take.
+                let state = await controller.status().state
+                guard state == "idle" else {
+                    return .json(
+                        APIErrorBody(error: "recording in progress (state=\(state)) — stop it before quitting the daemon"),
+                        status: 409
+                    )
+                }
                 DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { exit(0) }
                 return .json(["ok": "true"])
             default:
