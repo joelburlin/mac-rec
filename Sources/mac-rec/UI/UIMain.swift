@@ -22,10 +22,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var hotkeys: HotkeyManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        RecorderProxy.uiLog("UI launched v\(macRecVersion)")
         let statusBar = StatusBarController(proxy: proxy)
         let hud = HUDController(proxy: proxy)
         self.statusBar = statusBar
         self.hud = hud
+        hud.startAutoUpdate()  // pill drives itself; onChange is a bonus
 
         proxy.onChange = { [weak self] status in
             self?.statusBar?.update(status)

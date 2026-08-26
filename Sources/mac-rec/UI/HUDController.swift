@@ -89,7 +89,21 @@ final class HUDController {
 
     // MARK: - State
 
+    /// Self-driving: reads proxy.status on a timer so the pill works even if
+    /// the onChange callback chain ever breaks.
+    func startAutoUpdate() {
+        update(proxy.status)
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in self.update(self.proxy.status) }
+        }
+        RunLoop.main.add(t, forMode: .common)
+    }
+
     func update(_ s: StatusInfo) {
+        if s.state != lastState {
+            RecorderProxy.uiLog("HUD state \(lastState.isEmpty ? "launch" : lastState) → \(s.state)")
+        }
         if s.state != "idle" { userHidden = false }
         switch s.state {
         case "recording":
