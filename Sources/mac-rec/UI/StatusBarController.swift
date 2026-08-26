@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import ScreenCaptureKit
 
 @MainActor
@@ -6,10 +7,21 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let proxy: RecorderProxy
     private let item: NSStatusItem
     private let menu = NSMenu()
-    /// (index in SCShareableContent.displays order, label) — refreshed on menu open.
+
+    /// Persistent submenus whose contents are refreshed in place — the top
+    /// menu must NEVER be rebuilt while open or hovered submenus vanish
+    /// mid-click.
+    private let displaysSubmenu = NSMenu()
+    private let windowsSubmenu = NSMenu()
+    private let micsSubmenu = NSMenu()
+    private var menuOpen = false
+
+    /// (index in SCShareableContent.displays order, label)
     private var displays: [(Int, String)] = []
-    /// (CGWindowID, label) — refreshed on menu open.
+    /// (CGWindowID, label)
     private var windows: [(UInt32, String)] = []
+    /// (uniqueID, name)
+    private var mics: [(String, String)] = []
 
     init(proxy: RecorderProxy) {
         self.proxy = proxy
@@ -41,14 +53,22 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             string: title,
             attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)]
         )
-        rebuildMenu(for: s)
+        // Rebuilding an OPEN menu destroys hovered submenus mid-click.
+        if !menuOpen {
+            rebuildMenu(for: s)
+        }
     }
 
-    // MARK: - Menu
+    // MARK: - Menu lifecycle
 
     func menuWillOpen(_ menu: NSMenu) {
-        refreshDisplays()
+        menuOpen = true
         rebuildMenu(for: proxy.status)
+        refreshLists()
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        menuOpen = false
     }
 
     private func rebuildMenu(for s: StatusInfo) {
@@ -58,38 +78,24 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         case "idle":
             menu.addItem(shortcut(makeItem("Record Full Screen", #selector(startMain)), .toggle))
             if displays.count > 1 {
-                let sub = NSMenu()
-                for (idx, label) in displays {
-                    let it = NSMenuItem(title: label, action: #selector(startDisplay(_:)), keyEquivalent: "")
-                    it.target = self
-                    it.tag = idx
-                    sub.addItem(it)
-                }
                 let holder = NSMenuItem(title: "Record Display", action: nil, keyEquivalent: "")
-                holder.submenu = sub
+                holder.submenu = displaysSubmenu
                 menu.addItem(holder)
             }
             menu.addItem(shortcut(makeItem("Record Area…", #selector(startArea)), .area))
-            if !windows.isEmpty {
-                let sub = NSMenu()
-                for (wid, label) in windows {
-                    let it = NSMenuItem(title: label, action: #selector(startWindow(_:)), keyEquivalent: "")
-                    it.target = self
-                    it.tag = Int(wid)
-                    sub.addItem(it)
-                }
-                let holder = NSMenuItem(title: "Record Window", action: nil, keyEquivalent: "")
-                holder.submenu = sub
-                menu.addItem(holder)
-            }
-            // Transport controls stay visible (grayed) so the shortcuts are
-            // discoverable before the first recording.
+            let winHolder = NSMenuItem(title: "Record Window", action: nil, keyEquivalent: "")
+            winHolder.submenu = windowsSubmenu
+            menu.addItem(winHolder)
             menu.addItem(.separator())
             menu.addItem(shortcut(disabled("Stop & Save"), .stop))
             menu.addItem(shortcut(disabled("Pause"), .toggle))
             menu.addItem(shortcut(disabled("Rewind 10s"), .rewind))
             menu.addItem(.separator())
             menu.addItem(check(makeItem("Capture Microphone", #selector(toggleMic)), "captureMic"))
+            let micHolder = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
+            micHolder.submenu = micsSubmenu
+            menu.addItem(micHolder)
+            menu.addItem(check(makeItem("Clean Mic Audio (denoise + level)", #selector(toggleCleanMic)), "cleanMic"))
             menu.addItem(check(makeItem("Capture System Audio", #selector(toggleSystemAudio)), "captureSystemAudio"))
             addPermissionItems()
 
@@ -125,7 +131,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(makeItem("Quit mac-rec UI", #selector(quit)))
     }
 
-    private func refreshDisplays() {
+    // MARK: - Source/device lists (refreshed in place; safe while menu open)
+
+    private func refreshLists() {
+        refreshMics()
+        fillSubmenus()
         Task {
             guard let content = try? await SCShareableContent
                 .excludingDesktopWindows(false, onScreenWindowsOnly: true) else { return }
@@ -147,9 +157,52 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             await MainActor.run {
                 self.displays = displayList
                 self.windows = Array(windowList)
-                // Live-update the open menu so submenus appear on first click.
-                self.rebuildMenu(for: self.proxy.status)
+                self.fillSubmenus()
             }
+        }
+    }
+
+    private func refreshMics() {
+        let devices = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external],
+            mediaType: .audio,
+            position: .unspecified
+        ).devices
+        mics = devices.map { ($0.uniqueID, $0.localizedName) }
+    }
+
+    private func fillSubmenus() {
+        displaysSubmenu.removeAllItems()
+        for (idx, label) in displays {
+            let it = NSMenuItem(title: label, action: #selector(startDisplay(_:)), keyEquivalent: "")
+            it.target = self
+            it.tag = idx
+            displaysSubmenu.addItem(it)
+        }
+
+        windowsSubmenu.removeAllItems()
+        if windows.isEmpty {
+            windowsSubmenu.addItem(disabled("Scanning windows…"))
+        }
+        for (wid, label) in windows {
+            let it = NSMenuItem(title: label, action: #selector(startWindow(_:)), keyEquivalent: "")
+            it.target = self
+            it.tag = Int(wid)
+            windowsSubmenu.addItem(it)
+        }
+
+        micsSubmenu.removeAllItems()
+        let selected = UserDefaults.standard.string(forKey: "micDeviceID")
+        let def = NSMenuItem(title: "System Default", action: #selector(selectMic(_:)), keyEquivalent: "")
+        def.target = self
+        def.state = selected == nil ? .on : .off
+        micsSubmenu.addItem(def)
+        for (id, name) in mics {
+            let it = NSMenuItem(title: name, action: #selector(selectMic(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = id
+            it.state = selected == id ? .on : .off
+            micsSubmenu.addItem(it)
         }
     }
 
@@ -213,19 +266,30 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    @objc private func grantScreen() { Permissions.requestScreen(proxy: proxy) }
-    @objc private func grantMic() { Permissions.requestMic() }
     @objc private func pause() { proxy.pause() }
     @objc private func resume() { proxy.resume() }
     @objc private func rewind10() { proxy.rewind(seconds: 10) }
     @objc private func rewind30() { proxy.rewind(seconds: 30) }
     @objc private func stop() { proxy.stopAndSave() }
 
+    @objc private func selectMic(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String {
+            UserDefaults.standard.set(id, forKey: "micDeviceID")
+            UserDefaults.standard.set(sender.title, forKey: "micDeviceName")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "micDeviceID")
+            UserDefaults.standard.removeObject(forKey: "micDeviceName")
+        }
+        fillSubmenus()
+    }
+
     @objc private func toggleMic() { flip("captureMic") }
     @objc private func toggleSystemAudio() { flip("captureSystemAudio") }
+    @objc private func toggleCleanMic() { flip("cleanMic") }
     private func flip(_ k: String) {
         let cur = UserDefaults.standard.object(forKey: k) as? Bool ?? true
         UserDefaults.standard.set(!cur, forKey: k)
+        if !menuOpen { rebuildMenu(for: proxy.status) }
     }
 
     @objc private func openFolder() {
@@ -235,4 +299,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func quit() {
         NSApp.terminate(nil)
     }
+
+    @objc private func grantScreen() { Permissions.requestScreen(proxy: proxy) }
+    @objc private func grantMic() { Permissions.requestMic() }
 }

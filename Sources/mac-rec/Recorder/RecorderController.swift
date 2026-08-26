@@ -192,6 +192,7 @@ actor RecorderController {
             sessionDir: sessionDir?.path,
             source: engine?.sourceDescription ?? meta?.options.source,
             displayID: state == .idle ? nil : activeDisplayID,
+            micLevel: (state == .recording && (meta?.options.mic ?? false)) ? engine?.micLevel : nil,
             recordedSeconds: recorded,
             liveSeconds: live,
             segmentCount: meta?.segmentCount ?? 0,

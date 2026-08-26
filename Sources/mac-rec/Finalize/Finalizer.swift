@@ -128,12 +128,18 @@ struct Finalizer {
         }
 
         // Trust the file over the metadata: count the audio streams actually
-        // present in the source before wiring any filtergraph.
+        // present in the source before wiring any filtergraph. The mic is the
+        // last audio stream; with system audio off it is the only one.
         let audioCount = probeAudioStreamCount(source)
-        let hasMic = micUsable && audioCount >= 2
+        let expectedWithMic = (keptRuns.first?.hasSystemAudio == true ? 1 : 0) + 1
+        let hasMic = micUsable && audioCount >= expectedWithMic
 
         // 4. Final encode. Default: HEVC VideoToolbox constant quality, audio
-        //    tracks mixed down to one AAC track for shareability.
+        //    tracks mixed down to one AAC track for shareability. The mic
+        //    track (always the last audio stream) optionally gets a cleanup
+        //    chain: rumble high-pass → denoise → speech leveling.
+        let wantCleanMic = (opts.cleanMic ?? true) && hasMic
+        let micChain = "highpass=f=75,afftdn=nf=-30,speechnorm=e=4:r=0.0001:l=1"
         let final = sessionDir.appendingPathComponent("final.mp4")
         if opts.compress {
             var args = ["-hide_banner", "-y", "-i", source.path,
@@ -141,11 +147,24 @@ struct Finalizer {
                         "-c:v", "hevc_videotoolbox", "-q:v", String(cfg.compressQuality),
                         "-tag:v", "hvc1"]
             if audioCount >= 2 {
-                let inputs = (0..<audioCount).map { "[0:a:\($0)]" }.joined()
-                args += ["-filter_complex", "\(inputs)amix=inputs=\(audioCount):duration=longest:normalize=0[a]",
+                let micIdx = audioCount - 1
+                let others = (0..<micIdx).map { "[0:a:\($0)]" }.joined()
+                let graph: String
+                if wantCleanMic {
+                    graph = "[0:a:\(micIdx)]\(micChain)[mc];\(others)[mc]amix=inputs=\(audioCount):duration=longest:normalize=0[a]"
+                    notes.append("mic cleaned: denoise + speech leveling")
+                } else {
+                    graph = "\(others)[0:a:\(micIdx)]amix=inputs=\(audioCount):duration=longest:normalize=0[a]"
+                }
+                args += ["-filter_complex", graph,
                          "-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
             } else if audioCount == 1 {
-                args += ["-map", "0:a:0", "-c:a", "aac", "-b:a", "192k"]
+                args += ["-map", "0:a:0"]
+                if wantCleanMic {
+                    args += ["-af", micChain]
+                    notes.append("mic cleaned: denoise + speech leveling")
+                }
+                args += ["-c:a", "aac", "-b:a", "192k"]
             }
             args += ["-movflags", "+faststart", final.path]
             try Shell.runChecked("ffmpeg", args)

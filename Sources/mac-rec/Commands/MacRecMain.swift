@@ -61,6 +61,9 @@ struct Start: ParsableCommand {
     @Flag(name: .customLong("no-mic"), help: "Skip microphone capture.")
     var noMic = false
 
+    @Option(name: .customLong("mic-device"), help: "Microphone by name substring or uniqueID (see `mac-rec list`).")
+    var micDevice: String?
+
     @Flag(name: .customLong("no-system-audio"), help: "Skip system audio capture.")
     var noSystemAudio = false
 
@@ -90,6 +93,7 @@ struct Start: ParsableCommand {
         opts.displayID = displayID
         opts.windowID = windowID
         opts.area = areaRect
+        opts.micDeviceID = micDevice
         if windowID != nil, opts.source == "fullscreen" { opts.source = "window" }
         let status = try withClient { try $0.post("/start", body: opts, as: StatusInfo.self, timeout: 30) }
         printJSONOrText(status, json: json) {
@@ -172,6 +176,9 @@ struct Stop: ParsableCommand {
     @Option(name: .customLong("trim-end"), help: "Trim: drop everything after this second.")
     var trimEnd: Double?
 
+    @Flag(name: .customLong("no-clean-mic"), help: "Skip mic denoise + speech leveling.")
+    var noCleanMic = false
+
     @Flag(help: "Print machine-readable JSON.")
     var json = false
 
@@ -185,7 +192,8 @@ struct Stop: ParsableCommand {
             transcribe: !noTranscribe,
             upload: uploadFlag,
             trimStart: trimStart,
-            trimEnd: trimEnd
+            trimEnd: trimEnd,
+            cleanMic: noCleanMic ? false : nil
         )
         // Finalizing re-encodes + transcribes; allow plenty of time.
         let r = try withClient { try $0.post("/stop", body: opts, as: FinalResult.self, timeout: 1800) }

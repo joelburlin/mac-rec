@@ -25,7 +25,8 @@ final class RecorderProxy {
 
     func startPolling() {
         refresh()
-        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+        // 0.3s so the pill's timer and mic meter feel live; localhost is free.
+        let t = Timer(timeInterval: 0.3, repeats: true) { [weak self] _ in
             self?.refresh()
         }
         // .common keeps polling alive while menus or modal panels are open.
@@ -82,8 +83,15 @@ final class RecorderProxy {
     private func baseOptions() -> StartOptions {
         var opts = StartOptions()
         opts.mic = UserDefaults.standard.object(forKey: "captureMic") as? Bool ?? true
+        opts.micDeviceID = UserDefaults.standard.string(forKey: "micDeviceID")
         opts.systemAudio = UserDefaults.standard.object(forKey: "captureSystemAudio") as? Bool ?? true
         opts.excludeAppPIDs = [ProcessInfo.processInfo.processIdentifier]
+        return opts
+    }
+
+    private func stopOptions() -> StopOptions {
+        var opts = StopOptions()
+        opts.cleanMic = UserDefaults.standard.object(forKey: "cleanMic") as? Bool ?? true
         return opts
     }
 
@@ -192,7 +200,7 @@ final class RecorderProxy {
         queue.async {
             do {
                 let result = try self.client.post(
-                    "/stop", body: StopOptions(), as: FinalResult.self, timeout: 1800
+                    "/stop", body: self.stopOptions(), as: FinalResult.self, timeout: 1800
                 )
                 DispatchQueue.main.async { self.onSaved?(result) }
             } catch {

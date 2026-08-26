@@ -1,6 +1,7 @@
 import Foundation
 import ArgumentParser
 import ScreenCaptureKit
+import AVFoundation
 
 struct ListSources: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
@@ -18,6 +19,18 @@ struct ListSources: AsyncParsableCommand {
         for (i, d) in content.displays.enumerated() {
             let main = d.displayID == CGMainDisplayID() ? "  (main)" : ""
             print("  [\(i)] id=\(d.displayID) \(d.width)x\(d.height)\(main)")
+        }
+
+        print("microphones:  (use --mic-device NAME or ID)")
+        let defaultMicID = AVCaptureDevice.default(for: .audio)?.uniqueID
+        let mics = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.microphone, .external],
+            mediaType: .audio,
+            position: .unspecified
+        ).devices
+        for m in mics {
+            let mark = m.uniqueID == defaultMicID ? "  (default)" : ""
+            print("  id=\(m.uniqueID)  \(m.localizedName)\(mark)")
         }
 
         print("windows:")

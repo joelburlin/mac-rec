@@ -52,6 +52,15 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
     /// e.g. the user hits the system screen-sharing stop control.
     var onStopped: ((Error) -> Void)?
 
+    /// Peak-decayed mic input level 0…1, written on writerQueue, read anywhere.
+    private let micLevelLock = NSLock()
+    private var _micLevel: Double = 0
+    var micLevel: Double {
+        micLevelLock.lock()
+        defer { micLevelLock.unlock() }
+        return _micLevel
+    }
+
     private(set) var width = 0
     private(set) var height = 0
     private(set) var sourceDescription = ""
@@ -107,6 +116,20 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
         }
         if opts.mic {
             sc.captureMicrophone = true
+            if let want = opts.micDeviceID {
+                let devices = AVCaptureDevice.DiscoverySession(
+                    deviceTypes: [.microphone, .external],
+                    mediaType: .audio,
+                    position: .unspecified
+                ).devices
+                guard let dev = devices.first(where: { $0.uniqueID == want })
+                    ?? devices.first(where: { $0.localizedName.lowercased().contains(want.lowercased()) })
+                else {
+                    throw APIError(404, "no microphone matching \"\(want)\" (see `mac-rec list`)")
+                }
+                sc.microphoneCaptureDeviceID = dev.uniqueID
+                sourceDescription += " mic:\(dev.localizedName)"
+            }
         }
 
         try setupWriter()
@@ -201,6 +224,7 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
             guard sessionStarted, sb.presentationTimeStamp >= sessionStartPTS else { return }
             append(sb, to: sysAudioIn)
         case .microphone:
+            updateMicLevel(sb)
             guard sessionStarted, sb.presentationTimeStamp >= sessionStartPTS else { return }
             append(sb, to: micIn)
         @unknown default:
@@ -283,6 +307,52 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
         if status == noErr, let sb, input.append(sb) {
             lastVideoPTS = now
         }
+    }
+
+    /// RMS → dB → 0…1 with peak decay, sampled sparsely for cheapness.
+    private func updateMicLevel(_ sb: CMSampleBuffer) {
+        guard let fmt = CMSampleBufferGetFormatDescription(sb),
+              let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmt)?.pointee,
+              asbd.mBitsPerChannel == 32,
+              (asbd.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+        else { return }
+
+        let abl = AudioBufferList.allocate(maximumBuffers: 8)
+        defer { free(abl.unsafeMutablePointer) }
+        var blockBuffer: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sb,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: abl.unsafeMutablePointer,
+            bufferListSize: AudioBufferList.sizeInBytes(maximumBuffers: 8),
+            blockBufferAllocator: kCFAllocatorDefault,
+            blockBufferMemoryAllocator: kCFAllocatorDefault,
+            flags: 0,
+            blockBufferOut: &blockBuffer
+        )
+        guard status == noErr else { return }
+
+        var sum: Float = 0
+        var count = 0
+        for buf in abl {
+            guard let data = buf.mData else { continue }
+            let n = Int(buf.mDataByteSize) / MemoryLayout<Float>.size
+            let p = data.bindMemory(to: Float.self, capacity: n)
+            var i = 0
+            while i < n {
+                let v = p[i]
+                sum += v * v
+                count += 1
+                i += 4
+            }
+        }
+        guard count > 0 else { return }
+        let rms = (sum / Float(count)).squareRoot()
+        let db = 20 * log10(max(rms, 1e-7))
+        let norm = Double(max(0, min(1, (db + 50) / 50)))
+        micLevelLock.lock()
+        _micLevel = max(norm, _micLevel * 0.75)
+        micLevelLock.unlock()
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {

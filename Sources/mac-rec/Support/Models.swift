@@ -25,6 +25,9 @@ struct StartOptions: Codable {
     /// Title / app-name substring for window and app sources.
     var query: String?
     var mic: Bool = true
+    /// Microphone device: AVCaptureDevice uniqueID or a name substring;
+    /// nil = system default.
+    var micDeviceID: String?
     var systemAudio: Bool = true
     /// Optional slug used in the session directory name.
     var title: String?
@@ -42,6 +45,8 @@ struct StopOptions: Codable {
     var upload: Bool?
     var trimStart: Double?
     var trimEnd: Double?
+    /// Denoise + level the mic track during the final encode (default true).
+    var cleanMic: Bool?
 }
 
 struct RewindRequest: Codable {
@@ -56,6 +61,8 @@ struct StatusInfo: Codable {
     /// CGDirectDisplayID of the display being captured (nil for window sources)
     /// — lets the UI put the floating HUD on the right screen.
     var displayID: UInt32?
+    /// Live mic input level 0…1 (peak-decayed), nil when mic is off.
+    var micLevel: Double?
     /// Seconds of footage currently kept on disk (finished segments).
     var recordedSeconds: Double
     /// Estimated seconds including the in-flight run (while recording).
