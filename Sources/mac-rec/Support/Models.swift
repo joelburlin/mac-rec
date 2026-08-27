@@ -47,6 +47,14 @@ struct StopOptions: Codable {
     var trimEnd: Double?
     /// Denoise + level the mic track during the final encode (default true).
     var cleanMic: Bool?
+    /// Mic gain in dB; nil = auto from config.
+    var micGainDb: Double?
+    /// Burn-in caption style; nil = config default.
+    var captionStyle: String?
+    /// Replace the recorded narration with an ElevenLabs voice.
+    var voiceover: Bool?
+    /// ElevenLabs voice id; nil = config default.
+    var voiceID: String?
 }
 
 struct RewindRequest: Codable {
@@ -63,6 +71,10 @@ struct StatusInfo: Codable {
     var displayID: UInt32?
     /// Live mic input level 0…1 (peak-decayed), nil when mic is off.
     var micLevel: Double?
+    /// Raw mic level in dBFS — the honest number behind the meter.
+    var micDb: Double?
+    /// Mic muted live (samples dropped, recording continues).
+    var micMuted: Bool = false
     /// Human-readable note about the last notable event (e.g. why the
     /// session auto-paused). Cleared on start/resume.
     var lastEvent: String?

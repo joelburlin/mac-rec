@@ -45,6 +45,12 @@ final class DaemonServer {
                 return .json(try await controller.pause())
             case ("POST", "/resume"):
                 return .json(try await controller.resume())
+            case ("POST", "/mic"):
+                let body = try JSONDecoder.api.decode([String: Bool].self, from: req.body)
+                guard let muted = body["muted"] else {
+                    throw APIError(400, "expected {\"muted\": true|false}")
+                }
+                return .json(await controller.setMicMuted(muted))
             case ("POST", "/rewind"):
                 let r = try JSONDecoder.api.decode(RewindRequest.self, from: req.body)
                 return .json(try await controller.rewind(seconds: r.seconds))

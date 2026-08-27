@@ -67,6 +67,9 @@ final class HUDController {
         button2.action = #selector(secondaryAction)
         button3.action = #selector(tertiaryAction)
 
+        // The meter doubles as the mute button.
+        micMeter.onClick = { [weak proxy] in proxy?.toggleMic() }
+
         let stack = NSStackView(views: [dot, timeLabel, micMeter, button1, button2, button3])
         stack.orientation = .horizontal
         stack.spacing = 10
@@ -106,8 +109,16 @@ final class HUDController {
             RecorderProxy.uiLog("HUD state \(lastState.isEmpty ? "launch" : lastState) → \(s.state)")
         }
         if s.state != "idle" { userHidden = false }
-        micMeter.level = s.micLevel ?? 0
-        micMeter.active = s.micLevel != nil
+        micMeter.level = s.micMuted ? 0 : (s.micLevel ?? 0)
+        micMeter.active = s.micLevel != nil && !s.micMuted
+        micMeter.muted = s.micMuted || (s.state == "idle" && !proxy.micEnabledPreference)
+        if let db = s.micDb, s.micLevel != nil {
+            micMeter.toolTip = s.micMuted
+                ? "Mic muted — click to unmute"
+                : String(format: "Mic %.0f dBFS — click to mute", db)
+        } else {
+            micMeter.toolTip = micMeter.muted ? "Mic off — click to enable" : "Microphone"
+        }
         switch s.state {
         case "recording":
             // A new recording may target a different display — move to it.
@@ -236,18 +247,29 @@ final class MicLevelView: NSView {
     var active = false {
         didSet { if active != oldValue { needsDisplay = true } }
     }
+    var muted = false {
+        didSet { if muted != oldValue { needsDisplay = true } }
+    }
+    /// Clicking the meter mutes/unmutes.
+    var onClick: (() -> Void)?
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 44, height: 16) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 46, height: 18) }
+
+    override func mouseDown(with event: NSEvent) { onClick?() }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         let iconSize: CGFloat = 12
         if let icon = NSImage(
-            systemSymbolName: active ? "mic.fill" : "mic.slash",
+            systemSymbolName: muted ? "mic.slash.fill" : (active ? "mic.fill" : "mic"),
             accessibilityDescription: "mic level"
         )?.withSymbolConfiguration(.init(pointSize: iconSize, weight: .medium)) {
-            let tinted = icon.tinted(active ? .labelColor : .tertiaryLabelColor)
-            tinted.draw(in: NSRect(x: 0, y: (bounds.height - iconSize) / 2 - 1,
-                                   width: iconSize, height: iconSize + 2))
+            let tint: NSColor = muted ? .systemRed : (active ? .labelColor : .tertiaryLabelColor)
+            icon.tinted(tint).draw(in: NSRect(x: 0, y: (bounds.height - iconSize) / 2 - 1,
+                                              width: iconSize, height: iconSize + 2))
         }
 
         let track = NSRect(x: iconSize + 5, y: bounds.midY - 2.5,
@@ -255,7 +277,7 @@ final class MicLevelView: NSView {
         NSColor.tertiaryLabelColor.withAlphaComponent(0.35).setFill()
         NSBezierPath(roundedRect: track, xRadius: 2.5, yRadius: 2.5).fill()
 
-        guard active, level > 0.02 else { return }
+        guard active, !muted, level > 0.02 else { return }
         var fill = track
         fill.size.width = max(3, track.width * CGFloat(min(1, level)))
         let color: NSColor = level > 0.85 ? .systemRed : (level > 0.65 ? .systemYellow : .systemGreen)

@@ -25,11 +25,41 @@ struct Setup: ParsableCommand {
     @Option(name: .customLong("output-root"), help: "Where session directories are written.")
     var outputRoot: String?
 
+    @Option(name: .customLong("eleven-key"),
+            help: "ElevenLabs API key (or \"env\" to copy it from $ELEVENLABS_API_KEY).")
+    var elevenKey: String?
+
+    @Option(name: .customLong("eleven-model"), help: "ElevenLabs model id (default eleven_v3).")
+    var elevenModel: String?
+
+    @Option(name: .customLong("caption-style"),
+            help: "Default burned-in caption style: none|classic|boxed|bold|karaoke|minimal.")
+    var captionStyle: String?
+
+    @Option(name: .customLong("caption-position"), help: "bottom | top | center.")
+    var captionPosition: String?
+
+    @Option(name: .customLong("mic-gain"),
+            help: "Fixed mic gain in dB, or \"auto\" to level automatically (default).")
+    var micGain: String?
+
     func run() throws {
         var cfg = Config.load()
         var changed = false
 
         if let model = whisperModel {
+            // An existing .bin path is used as-is (e.g. a model another app
+            // already downloaded); a bare name is fetched.
+            if model.hasSuffix(".bin") {
+                let url = URL(fileURLWithPath: (model as NSString).expandingTildeInPath)
+                guard FileManager.default.fileExists(atPath: url.path) else {
+                    throw ValidationError("no model file at \(url.path)")
+                }
+                cfg.whisperModel = url.path
+                try cfg.save()
+                print("using whisper model: \(url.path)")
+                return
+            }
             let file = "ggml-\(model).bin"
             let dest = Config.modelsDir.appendingPathComponent(file)
             if FileManager.default.fileExists(atPath: dest.path) {
@@ -49,6 +79,36 @@ struct Setup: ParsableCommand {
         if let prefix = gcsPrefix { cfg.gcsPrefix = prefix; changed = true }
         if let port { cfg.port = port; changed = true }
         if let root = outputRoot { cfg.outputRoot = root; changed = true }
+        if let k = elevenKey {
+            if k == "env" {
+                guard let fromEnv = ProcessInfo.processInfo.environment["ELEVENLABS_API_KEY"],
+                      !fromEnv.isEmpty
+                else { throw ValidationError("ELEVENLABS_API_KEY is not set in this shell") }
+                cfg.elevenKey = fromEnv
+            } else {
+                cfg.elevenKey = k
+            }
+            changed = true
+        }
+        if let m = elevenModel { cfg.elevenModel = m; changed = true }
+        if let s = captionStyle {
+            guard Captions.styleNames.contains(s.lowercased()) else {
+                throw ValidationError("caption style must be one of: \(Captions.styleNames.joined(separator: ", "))")
+            }
+            cfg.captionStyle = s.lowercased()
+            changed = true
+        }
+        if let p = captionPosition { cfg.captionPosition = p.lowercased(); changed = true }
+        if let g = micGain {
+            if g.lowercased() == "auto" {
+                cfg.micGainDb = nil
+            } else if let v = Double(g) {
+                cfg.micGainDb = v
+            } else {
+                throw ValidationError("--mic-gain takes a dB number or \"auto\"")
+            }
+            changed = true
+        }
 
         if changed {
             try cfg.save()

@@ -14,7 +14,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private let displaysSubmenu = NSMenu()
     private let windowsSubmenu = NSMenu()
     private let micsSubmenu = NSMenu()
+    private let captionsSubmenu = NSMenu()
+    private let voiceSubmenu = NSMenu()
     private var menuOpen = false
+    /// (id, name) ElevenLabs voices, fetched lazily on first menu open.
+    private var voices: [(String, String)] = []
+    private var voicesLoaded = false
 
     /// (index in SCShareableContent.displays order, label)
     private var displays: [(Int, String)] = []
@@ -97,6 +102,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             menu.addItem(micHolder)
             menu.addItem(check(makeItem("Clean Mic Audio (denoise + level)", #selector(toggleCleanMic)), "cleanMic"))
             menu.addItem(check(makeItem("Capture System Audio", #selector(toggleSystemAudio)), "captureSystemAudio"))
+            menu.addItem(.separator())
+            let capHolder = NSMenuItem(title: "Captions", action: nil, keyEquivalent: "")
+            capHolder.submenu = captionsSubmenu
+            menu.addItem(capHolder)
+            let voHolder = NSMenuItem(title: "AI Voiceover", action: nil, keyEquivalent: "")
+            voHolder.submenu = voiceSubmenu
+            menu.addItem(voHolder)
             addPermissionItems()
 
         case "recording":
@@ -138,6 +150,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func refreshLists() {
         refreshMics()
+        loadVoicesIfNeeded()
         fillSubmenus()
         Task {
             guard let content = try? await SCShareableContent
@@ -206,6 +219,65 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             it.representedObject = id
             it.state = selected == id ? .on : .off
             micsSubmenu.addItem(it)
+        }
+
+        // Captions: style templates + where they sit.
+        captionsSubmenu.removeAllItems()
+        let cfg = Config.load()
+        let style = UserDefaults.standard.string(forKey: "captionStyle") ?? cfg.captionStyle
+        captionsSubmenu.addItem(disabled("Burn into the video"))
+        for name in Captions.styleNames {
+            let title = name == "none" ? "Off (sidecar .srt only)" : name.capitalized
+            let it = NSMenuItem(title: title, action: #selector(selectCaptionStyle(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = name
+            it.state = style == name ? .on : .off
+            captionsSubmenu.addItem(it)
+        }
+        captionsSubmenu.addItem(.separator())
+        captionsSubmenu.addItem(disabled("Position"))
+        for pos in ["bottom", "center", "top"] {
+            let it = NSMenuItem(title: pos.capitalized, action: #selector(selectCaptionPosition(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = pos
+            it.state = cfg.captionPosition == pos ? .on : .off
+            captionsSubmenu.addItem(it)
+        }
+
+        // AI voiceover: on/off + voice picker.
+        voiceSubmenu.removeAllItems()
+        let voOn = UserDefaults.standard.bool(forKey: "voiceover")
+        let toggle = NSMenuItem(title: "Replace narration with AI voice",
+                                action: #selector(toggleVoiceover), keyEquivalent: "")
+        toggle.target = self
+        toggle.state = voOn ? .on : .off
+        voiceSubmenu.addItem(toggle)
+        voiceSubmenu.addItem(.separator())
+        if cfg.resolveElevenKey() == nil {
+            voiceSubmenu.addItem(disabled("Set a key: mac-rec setup --eleven-key env"))
+        } else if voices.isEmpty {
+            voiceSubmenu.addItem(disabled(voicesLoaded ? "No voices found" : "Loading voices…"))
+        } else {
+            for (id, name) in voices {
+                let it = NSMenuItem(title: name, action: #selector(selectVoice(_:)), keyEquivalent: "")
+                it.target = self
+                it.representedObject = id
+                it.state = cfg.elevenVoiceID == id ? .on : .off
+                voiceSubmenu.addItem(it)
+            }
+        }
+    }
+
+    private func loadVoicesIfNeeded() {
+        guard !voicesLoaded, let key = Config.load().resolveElevenKey() else { return }
+        voicesLoaded = true
+        DispatchQueue.global().async {
+            let list = (try? ElevenLabs.listVoices(key: key)) ?? []
+            let mapped = list.prefix(30).map { ($0.id, $0.name) }
+            DispatchQueue.main.async {
+                self.voices = Array(mapped)
+                self.fillSubmenus()
+            }
         }
     }
 
@@ -283,6 +355,38 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             UserDefaults.standard.removeObject(forKey: "micDeviceID")
             UserDefaults.standard.removeObject(forKey: "micDeviceName")
         }
+        fillSubmenus()
+    }
+
+    @objc private func selectCaptionStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(style, forKey: "captionStyle")
+        var cfg = Config.load()
+        cfg.captionStyle = style
+        try? cfg.save()
+        fillSubmenus()
+    }
+
+    @objc private func selectCaptionPosition(_ sender: NSMenuItem) {
+        guard let pos = sender.representedObject as? String else { return }
+        var cfg = Config.load()
+        cfg.captionPosition = pos
+        try? cfg.save()
+        fillSubmenus()
+    }
+
+    @objc private func toggleVoiceover() {
+        let cur = UserDefaults.standard.bool(forKey: "voiceover")
+        UserDefaults.standard.set(!cur, forKey: "voiceover")
+        fillSubmenus()
+    }
+
+    @objc private func selectVoice(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        var cfg = Config.load()
+        cfg.elevenVoiceID = id
+        cfg.elevenVoiceName = sender.title
+        try? cfg.save()
         fillSubmenus()
     }
 

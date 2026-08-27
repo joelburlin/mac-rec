@@ -52,13 +52,36 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
     /// e.g. the user hits the system screen-sharing stop control.
     var onStopped: ((Error) -> Void)?
 
-    /// Peak-decayed mic input level 0…1, written on writerQueue, read anywhere.
+    /// Peak-decayed mic input level 0…1 and its raw dBFS, written on
+    /// writerQueue, read anywhere.
     private let micLevelLock = NSLock()
     private var _micLevel: Double = 0
+    private var _micDb: Double = -120
     var micLevel: Double {
         micLevelLock.lock()
         defer { micLevelLock.unlock() }
         return _micLevel
+    }
+    var micDb: Double {
+        micLevelLock.lock()
+        defer { micLevelLock.unlock() }
+        return _micDb
+    }
+
+    /// Live mute: mic samples are metered but not written.
+    private let muteLock = NSLock()
+    private var _micMuted = false
+    var micMuted: Bool {
+        get {
+            muteLock.lock()
+            defer { muteLock.unlock() }
+            return _micMuted
+        }
+        set {
+            muteLock.lock()
+            _micMuted = newValue
+            muteLock.unlock()
+        }
     }
 
     private(set) var width = 0
@@ -226,6 +249,9 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
         case .microphone:
             updateMicLevel(sb)
             guard sessionStarted, sb.presentationTimeStamp >= sessionStartPTS else { return }
+            // Muted: keep the stream running, just don't write the samples —
+            // the gap plays back as silence.
+            guard !micMuted else { return }
             append(sb, to: micIn)
         @unknown default:
             break
@@ -369,14 +395,18 @@ final class CaptureEngine: NSObject, SCStreamDelegate, SCStreamOutput, AVAssetWr
         }
         guard count > 0 else { return }
         let rms = (sum / Float(count)).squareRoot()
-        let db = 20 * log10(max(rms, 1e-7))
-        let norm = Double(max(0, min(1, (db + 50) / 50)))
+        let db = Double(20 * log10(max(rms, 1e-7)))
+        // Real mics (especially webcam mics) sit far below 0 dBFS: speech on
+        // a C920 peaks near -40 dBFS. Map -60…-10 dBFS onto the meter so
+        // normal input is actually visible.
+        let norm = max(0, min(1, (db + 60) / 50))
         // Decay by elapsed time, not per buffer — buffers arrive every ~10ms
         // and a per-buffer factor emptied the meter between UI polls.
         let bufDur = max(0.005, CMSampleBufferGetDuration(sb).seconds)
         let decay = pow(0.5, bufDur / 0.35)
         micLevelLock.lock()
         _micLevel = max(norm, _micLevel * decay)
+        _micDb = max(db, _micDb * decay + (1 - decay) * -120)
         micLevelLock.unlock()
     }
 

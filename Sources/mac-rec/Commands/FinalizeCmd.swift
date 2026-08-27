@@ -31,6 +31,18 @@ struct FinalizeCmd: ParsableCommand {
     @Option(name: .customLong("trim-end"), help: "Trim: drop everything after this second.")
     var trimEnd: Double?
 
+    @Option(name: .customLong("mic-gain"), help: "Mic gain in dB (default: auto).")
+    var micGain: Double?
+
+    @Option(help: "Burn in captions: none|classic|boxed|bold|karaoke|minimal.")
+    var captions: String?
+
+    @Flag(help: "Replace recorded narration with an ElevenLabs voice.")
+    var voiceover = false
+
+    @Option(help: "ElevenLabs voice id/name for --voiceover.")
+    var voice: String?
+
     @Flag(help: "Print machine-readable JSON.")
     var json = false
 
@@ -60,7 +72,12 @@ struct FinalizeCmd: ParsableCommand {
             transcribe: !noTranscribe,
             upload: noUpload ? false : nil,
             trimStart: trimStart,
-            trimEnd: trimEnd
+            trimEnd: trimEnd,
+            cleanMic: nil,
+            micGainDb: micGain,
+            captionStyle: captions,
+            voiceover: voiceover ? true : nil,
+            voiceID: voice
         )
         let r = try Finalizer(cfg: cfg).finalize(meta: meta, sessionDir: dir, opts: opts)
 

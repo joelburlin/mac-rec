@@ -20,6 +20,8 @@ final class RecorderProxy {
     private var timer: Timer?
     /// Tracks reachability transitions so ui.log records them exactly once.
     private var daemonReachable: Bool?
+    /// Guards against duplicate /stop requests (see stopAndSave).
+    private var stopInFlight = false
 
     // MARK: - Polling
 
@@ -51,6 +53,8 @@ final class RecorderProxy {
                 }
             }
             DispatchQueue.main.async {
+                // Don't let a stale poll walk the optimistic "saving…" back.
+                if self.stopInFlight, s.state == "recording" || s.state == "paused" { return }
                 if self.status.state != s.state {
                     Self.uiLog("state: \(self.status.state) → \(s.state)")
                 }
@@ -90,9 +94,31 @@ final class RecorderProxy {
     }
 
     private func stopOptions() -> StopOptions {
+        let d = UserDefaults.standard
         var opts = StopOptions()
-        opts.cleanMic = UserDefaults.standard.object(forKey: "cleanMic") as? Bool ?? true
+        opts.cleanMic = d.object(forKey: "cleanMic") as? Bool ?? true
+        if let style = d.string(forKey: "captionStyle") { opts.captionStyle = style }
+        if d.bool(forKey: "voiceover") { opts.voiceover = true }
         return opts
+    }
+
+    /// Live mic mute (during recording); when idle this flips whether the next
+    /// recording captures the mic at all.
+    func toggleMic() {
+        if status.state == "idle" {
+            let cur = UserDefaults.standard.object(forKey: "captureMic") as? Bool ?? true
+            UserDefaults.standard.set(!cur, forKey: "captureMic")
+            onChange?(status)
+            return
+        }
+        let want = !status.micMuted
+        run("mic toggle", quiet: true) {
+            _ = try self.client.post("/mic", body: ["muted": want], as: StatusInfo.self)
+        }
+    }
+
+    var micEnabledPreference: Bool {
+        UserDefaults.standard.object(forKey: "captureMic") as? Bool ?? true
     }
 
     /// Screen-recording TCC gate: opens the repair flow instead of letting the
@@ -197,7 +223,14 @@ final class RecorderProxy {
     /// `quietIfIdle` suppresses the "nothing to stop" alert so the stop hotkey
     /// can always fire the request without trusting cached state.
     func stopAndSave(quietIfIdle: Bool = false) {
+        // A second click while the first save is still running used to come
+        // back as a 409 and pop "stop & save failed" — the save was fine.
+        guard !stopInFlight else { return }
+        stopInFlight = true
+        status.state = "finalizing"      // optimistic: the pill says "saving…" at once
+        onChange?(status)
         queue.async {
+            defer { DispatchQueue.main.async { self.stopInFlight = false } }
             do {
                 let result = try self.client.post(
                     "/stop", body: self.stopOptions(), as: FinalResult.self, timeout: 1800

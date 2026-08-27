@@ -17,6 +17,7 @@ actor RecorderController {
     private var activeDisplayID: UInt32?
     private var runIndex = 0
     private var lastEvent: String?
+    private var micMuted = false
     /// Display-sleep prevention while recording — a sleeping display kills
     /// the SCK stream (that's how a "30-minute take" becomes 4 minutes).
     private var sleepAssertion: IOPMAssertionID = 0
@@ -156,6 +157,13 @@ actor RecorderController {
 
     func status() -> StatusInfo { statusInfo() }
 
+    /// Live mic mute — the capture keeps running, samples are just dropped.
+    func setMicMuted(_ muted: Bool) -> StatusInfo {
+        micMuted = muted
+        engine?.micMuted = muted
+        return statusInfo()
+    }
+
     // MARK: - Internals
 
     private func launchRun(opts: StartOptions, sessionDir: URL) async throws -> CaptureEngine {
@@ -167,6 +175,7 @@ actor RecorderController {
         eng.onStopped = { [weak self] error in
             Task { await self?.streamDied(engine: eng, error: error) }
         }
+        eng.micMuted = micMuted  // mute survives pause/resume
         engine = eng
         activeDisplayID = eng.capturedDisplayID
         return eng
@@ -206,6 +215,8 @@ actor RecorderController {
             source: engine?.sourceDescription ?? meta?.options.source,
             displayID: state == .idle ? nil : activeDisplayID,
             micLevel: (state == .recording && (meta?.options.mic ?? false)) ? engine?.micLevel : nil,
+            micDb: (state == .recording && (meta?.options.mic ?? false)) ? engine?.micDb : nil,
+            micMuted: micMuted,
             lastEvent: lastEvent,
             recordedSeconds: recorded,
             liveSeconds: live,

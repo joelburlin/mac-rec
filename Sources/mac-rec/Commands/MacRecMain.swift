@@ -8,8 +8,9 @@ struct MacRec: AsyncParsableCommand {
         version: macRecVersion,
         subcommands: [
             Start.self, Pause.self, Resume.self, Rewind.self, Stop.self,
-            FinalizeCmd.self, Status.self, ListSources.self, Serve.self,
-            Setup.self, ShowConfig.self, Quit.self,
+            FinalizeCmd.self, VoiceoverCmd.self, Status.self, ListSources.self,
+            VoicesCmd.self, MicCmd.self, Serve.self, Setup.self,
+            ShowConfig.self, Quit.self,
         ]
     )
 }
@@ -179,6 +180,18 @@ struct Stop: ParsableCommand {
     @Flag(name: .customLong("no-clean-mic"), help: "Skip mic denoise + speech leveling.")
     var noCleanMic = false
 
+    @Option(name: .customLong("mic-gain"), help: "Mic gain in dB (default: auto-level to target).")
+    var micGain: Double?
+
+    @Option(help: "Burn in captions: none|classic|boxed|bold|karaoke|minimal.")
+    var captions: String?
+
+    @Flag(help: "Replace recorded narration with the configured ElevenLabs voice.")
+    var voiceover = false
+
+    @Option(help: "ElevenLabs voice id/name for --voiceover (default: configured voice).")
+    var voice: String?
+
     @Flag(help: "Print machine-readable JSON.")
     var json = false
 
@@ -193,7 +206,11 @@ struct Stop: ParsableCommand {
             upload: uploadFlag,
             trimStart: trimStart,
             trimEnd: trimEnd,
-            cleanMic: noCleanMic ? false : nil
+            cleanMic: noCleanMic ? false : nil,
+            micGainDb: micGain,
+            captionStyle: captions,
+            voiceover: voiceover ? true : nil,
+            voiceID: voice
         )
         // Finalizing re-encodes + transcribes; allow plenty of time.
         let r = try withClient { try $0.post("/stop", body: opts, as: FinalResult.self, timeout: 1800) }
@@ -235,6 +252,33 @@ struct Status: ParsableCommand {
                 return "idle"
             }
         }
+    }
+}
+
+struct MicCmd: ParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "mic",
+        abstract: "Mute or unmute the microphone during a live recording."
+    )
+
+    @Argument(help: "mute | unmute | toggle")
+    var action: String
+
+    func run() throws {
+        let muted: Bool
+        switch action.lowercased() {
+        case "mute": muted = true
+        case "unmute": muted = false
+        case "toggle":
+            let s = try withClient { try $0.get("/status", as: StatusInfo.self) }
+            muted = !s.micMuted
+        default:
+            throw ValidationError("action must be mute, unmute, or toggle")
+        }
+        let s = try withClient {
+            try $0.post("/mic", body: ["muted": muted], as: StatusInfo.self)
+        }
+        print(s.micMuted ? "🔇 mic muted" : "🎙 mic live")
     }
 }
 
