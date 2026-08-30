@@ -1,156 +1,165 @@
+<div align="center">
+
 # mac-rec
 
-Native macOS screen recorder built for humans **and** AI agents: ScreenCaptureKit
-capture, live-rewind via fragmented recording, whisper.cpp auto-captions, HEVC
-hardware compression, optional Google Cloud Storage upload — all driveable from
-a CLI or a local REST API.
+**The macOS screen recorder your agent can drive.**
+
+ScreenCaptureKit capture · live rewind · auto-captions · AI re-narration
+One daemon, two operators: you and your agent share the same recording.
+
+[Website](https://joelburlin.github.io/mac-rec/) · [Agent skill](skills/mac-rec/SKILL.md) · MIT
+
+</div>
+
+---
+
+Screen recorders are built for hands. This one is built for both: every verb is
+a keyboard shortcut **and** a CLI command **and** a localhost REST call, against
+one background daemon. Your agent can start a take, you can stop it from the
+floating pill, and neither has to know the other exists.
 
 ```bash
-mac-rec start --source fullscreen        # ● recording
-mac-rec pause                            # ⏸ enables rewind
-mac-rec rewind 10                        # ⏪ drop the flubbed last 10s
-mac-rec resume                           # ● keep going from before the flub
-mac-rec stop --output ./screencast.mp4   # ■ concat → compress → captions → upload
+mac-rec start --source fullscreen     # ● recording
+mac-rec pause                         # ⏸ enables rewind
+mac-rec rewind 10                     # ⏪ drop the flubbed last 10s
+mac-rec resume                        # ● continue from before the flub
+mac-rec stop --output ./demo.mp4      # ■ concat → compress → captions
 ```
 
-## How it works
+## Why it exists
 
-- **Capture**: ScreenCaptureKit (`SCStream`) — full display, a single window, or
-  an app's window. System audio comes straight from SCK (no audio driver), the
-  microphone is captured on the same stream clock.
-- **Live rewind**: while recording, an `AVAssetWriter` in fMP4/HLS mode emits
-  ~2-second fragments (`runs/run-NNN/seg_*.m4s`). Rewinding just deletes trailing
-  fragment files — no re-encoding, ever. Each pause→resume starts a new "run";
-  crash-safety falls out for free (fragments already on disk survive).
-- **Mic track**: the HLS writer profile allows one audio track per stream, so the
-  mic is a *parallel* audio-only fragment stream started at the same timeline
-  zero. At finalize it's trimmed to the kept video duration and muxed back —
-  rewind never desyncs it.
-- **Finalize** (`stop`): byte-concat fragments → per-run fMP4 → lossless
-  `ffmpeg -c copy` concat into `master.mp4` → optional stream-copy trim → HEVC
-  (`hevc_videotoolbox`, hardware) `final.mp4` → whisper.cpp `.srt`/`.vtt`/`.txt`
-  → optional `gcloud storage cp` upload with the share link on the clipboard.
+An agent that can *see* a screen still can't *show* you one. Driving a GUI
+recorder means clicking through dialogs no API exposes. mac-rec inverts that:
+the GUI is a thin shell over a documented local API, so recording a bug repro,
+a product demo, or a walkthrough is three shell commands — with a human able to
+take over mid-take.
 
-## Session layout
+## Features
 
-```
-~/Movies/mac-rec/<timestamp>-<title>/
-  meta.json            # session state: runs, segments, durations
-  runs/run-001/        # init.mp4 + seg_*.m4s (+ mic-init.mp4 + mic_*.m4s)
-  master.mp4           # lossless concat (video + system audio [+ mic])
-  final.mp4            # HEVC-compressed deliverable (audio mixed to one track)
-  final.srt / .vtt / .txt
-```
+- **Live rewind** — recording streams into ~2-second fragmented MP4 chunks.
+  Rewinding deletes trailing fragments; nothing is ever re-encoded. Resume
+  starts a new run, and stop concatenates what survived, losslessly.
+- **Capture anything** — a display, a single window (by id or name), or a
+  dragged region, with system audio and microphone as separate tracks.
+- **Captions** — whisper.cpp transcription with word timings, five burn-in
+  templates (`classic · boxed · bold · karaoke · minimal`) rendered natively
+  with CoreText, plus `.srt`/`.vtt`/`.txt` sidecars. Correct bidi, so Hebrew
+  and Arabic render properly.
+- **AI re-narration** — replace recorded narration with an ElevenLabs voice.
+  Each sentence is spoken separately and re-anchored at its original timestamp,
+  speed-fit to its slot, and captions are rebuilt from where the audio actually
+  landed — so they cannot drift from what is heard.
+- **Mic that survives reality** — auto-gain rescues quiet webcam mics, denoise
+  and speech-leveling clean the take, live mute mid-recording, and a level
+  meter on the floating pill so you never record silence by accident.
+- **Hardware compression** — HEVC via VideoToolbox, hardware-accelerated on
+  Apple Silicon. The lossless master is always kept alongside.
+- **Survives the real world** — displays are kept awake for the whole take, a
+  killed capture auto-pauses instead of zombie-recording, and any failed save
+  can be rebuilt from the fragments still on disk.
 
-## UI (menu bar + floating HUD + hotkeys)
+## Install
+
+Requires macOS 15+, Swift 6, and `ffmpeg`. `whisper-cpp` for captions,
+`gcloud` only if you want uploads.
 
 ```bash
-./make-app.sh            # builds + installs /Applications/Mac-Rec.app
+git clone https://github.com/joelburlin/mac-rec.git && cd mac-rec
+./setup-signing.sh     # once: a self-signed identity so permissions survive rebuilds
+./make-app.sh          # builds, installs /Applications/Mac-Rec.app, links the CLI
 open /Applications/Mac-Rec.app
 ```
 
-- **Menu bar**: record full screen, a display, a specific window, or a
-  free-style **area** (drag-select overlay, Esc cancels); mic + system-audio
-  toggles; pause/resume/rewind/stop; open recordings folder. The icon shows a
-  live timer while recording. Missing permissions surface as ⚠️ menu items
-  that deep-link the right System Settings pane — screen access auto-restarts
-  the daemon once granted.
-- **Floating HUD**: a draggable pill (● 0:42 ⏸ ⏪ ■) appears while recording —
-  CleanShot-style. It is automatically **excluded from the capture** (the
-  daemon filters this app's windows out of the display filter).
-- **Global hotkeys** (work everywhere, no Accessibility permission needed):
-  - `⌥⌘R` — start → pause → resume (one key drives the flow)
-  - `⌥⌘A` — record an area (drag-select)
-  - `⌥⌘←` — rewind 10s (auto-pauses if recording)
-  - `⌥⌘S` — stop & save (Finder reveals the file when done)
+Grant **Screen Recording** and **Microphone** to Mac-Rec on first record. The
+app spawns the daemon, so one grant covers the UI, the CLI, and your agent.
 
-  Rebind in `~/.config/mac-rec/config.json` (restart the app to apply), e.g.:
-  ```json
-  "hotkeys": { "toggle": "cmd+shift+2", "stop": "cmd+shift+3" }
-  ```
-  Format: `cmd`/`opt`/`ctrl`/`shift` + one key (a–z, 0–9, f1–f12, arrows, space).
-- `mac-rec ui` runs the same UI from a terminal (TCC then attributes to the
-  terminal, not the app — prefer the .app).
+> `setup-signing.sh` needs one `security add-trusted-cert` approval (it prints
+> the command). Skip it and the app still works — macOS just makes you
+> re-grant permissions after every rebuild, because ad-hoc signatures pin TCC
+> to the exact binary.
 
-The app is a thin shell over the same daemon the CLI uses: an agent can drive
-a recording while the HUD shows it, and vice versa. Launching the app starts
-the daemon under the **app's** TCC identity — grant Screen Recording +
-Microphone to "Mac-Rec" once and every client benefits. Add the app to Login
-Items to keep the daemon always ready.
+## For agents
+
+Copy the skill into any Claude Code install:
+
+```bash
+cp -r skills/mac-rec ~/.claude/skills/
+```
+
+Then "record a walkthrough of this bug" just works — the agent checks state,
+records, rewinds its own mistakes, and hands back an MP4 with captions. The
+skill covers the guardrails that matter: one session at a time, rewind needs
+pause, never abandon a take, and always read `notes` for soft failures.
 
 ## CLI
 
 | Command | Notes |
 |---|---|
-| `mac-rec start` | `--source fullscreen\|window\|app`, `--display N` / `--display-id ID`, `--query "Chrome"` / `--window-id ID`, `--area "x,y,w,h"` (display points, top-left origin), `--no-mic`, `--no-system-audio`, `--title slug` |
+| `mac-rec start` | `--source fullscreen\|window\|app`, `--display N` / `--display-id ID`, `--query "Chrome"` / `--window-id ID`, `--area "x,y,w,h"`, `--mic-device NAME`, `--no-mic`, `--no-system-audio`, `--title slug` |
 | `mac-rec pause` / `resume` | pause finishes the current run; resume starts a new one |
-| `mac-rec rewind <sec>` | paused only; drops **at least** that many seconds, fragment-granular (~2s) |
-| `mac-rec stop` | `--output PATH`, `--trim-start S`, `--trim-end S`, `--no-compress`, `--no-transcribe`, `--upload` / `--no-upload` |
-| `mac-rec status` | add `--json` (all verbs support it) for agent consumption |
-| `mac-rec list` | capturable displays + windows (`--query` filters) |
-| `mac-rec setup` | `--whisper-model base`, `--gcs-bucket NAME`, `--whisper-language he`, ... |
-| `mac-rec config` | show active config (`~/.config/mac-rec/config.json`) |
-| `mac-rec serve` / `quit` | run / stop the daemon manually (CLI auto-spawns it) |
+| `mac-rec rewind <sec>` | paused only; drops **at least** that many seconds (~2s granularity) |
+| `mac-rec stop` | `--output PATH`, `--captions STYLE`, `--voiceover`, `--voice ID`, `--trim-start/-end S`, `--mic-gain dB`, `--no-compress`, `--no-transcribe`, `--no-clean-mic`, `--upload` |
+| `mac-rec finalize <dir>` | rebuild deliverables from a session's fragments |
+| `mac-rec voiceover -i FILE` | re-narrate any existing video |
+| `mac-rec status` / `list` / `voices` | state, capture sources + mics, ElevenLabs voices |
+| `mac-rec setup` | `--whisper-model base`, `--eleven-key env`, `--caption-style bold`, `--gcs-bucket NAME`, `--mic-gain auto` |
 
-## REST API (for agents / future menu-bar UI)
+Every verb accepts `--json`.
 
-The daemon listens on `127.0.0.1:5757` (configurable). All bodies are JSON.
+## REST API
+
+The daemon listens on `127.0.0.1:5757`:
 
 ```
 GET  /health            GET  /status
-POST /start             {"source":"fullscreen","display":1,"mic":true,"systemAudio":true,"title":"demo"}
+POST /start             {"source":"fullscreen","display":1,"mic":true,"area":{...}}
 POST /pause             POST /resume
 POST /rewind            {"seconds": 10}
-POST /stop              {"output":"/tmp/out.mp4","compress":true,"transcribe":true,"trimEnd":42.0}
-POST /quit
+POST /mic               {"muted": true}
+POST /stop              {"output":"/tmp/out.mp4","captions":"bold","voiceover":true}
 ```
 
-Errors come back as `{"error":"..."}` with a 4xx/5xx status. `/stop` blocks
-until finalize completes (CLI waits up to 30 min).
+Errors return `{"error":"..."}` with a 4xx/5xx status. `/stop` blocks until
+finalize completes.
 
-## Permissions (one-time, per hosting app)
+## UI
 
-TCC attributes permissions to the app that (transitively) spawned the daemon —
-your terminal, or the agent's host app (e.g. cmux):
+A menu-bar app plus a floating pill (● timer · mic meter · pause · rewind ·
+stop) that stays out of the recording. Global hotkeys default to `⌥⌘R` record
+/ pause / resume, `⌥⌘A` area, `⌥⌘←` rewind 10s, `⌥⌘S` stop & save — all
+rebindable in `~/.config/mac-rec/config.json`.
 
-- **Screen & System Audio Recording** — required for any capture.
-- **Microphone** — required for `--mic` (the default). If a recording fails with
-  "user declined TCCs", enable the host app in System Settings → Privacy &
-  Security → Microphone (a previously dismissed prompt won't re-appear).
+## How it works
 
-## Setup
-
-```bash
-swift build -c release
-ln -sf "$PWD/.build/release/mac-rec" /opt/homebrew/bin/mac-rec
-
-# captions: download a whisper model (or point config at an existing ggml .bin)
-mac-rec setup --whisper-model base        # multilingual; base.en for EN-only
-
-# uploads (optional)
-mac-rec setup --gcs-bucket my-bucket --gcs-prefix screencasts
-gcloud auth login                         # once, for the uploading user
+```
+SCStream ──▶ AVAssetWriter (fMP4, 2s fragments) ──▶ runs/run-NNN/seg_*.m4s
+                                                          │
+   rewind = delete trailing fragments ────────────────────┤
+                                                          ▼
+        byte-concat ─▶ lossless master.mp4 ─▶ trim ─▶ whisper ─▶ [voiceover]
+                                                          │
+                                    HEVC + caption overlay ▼
+                                                     final.mp4
 ```
 
-External tools used at finalize (not needed during capture): `ffmpeg`,
-`whisper-cli` (brew `whisper-cpp`), `gcloud` (upload only).
+The fragment writer allows one audio track per stream, so the microphone rides
+a parallel fragment stream on the same clock and is muxed back at finalize —
+which is why rewind can never desync it.
 
-## Design notes / gotchas
+## Session layout
 
-- Rewind granularity is one fragment (~2s) and rounds **up** (you always lose at
-  least what you asked). Fragment length is `segmentSeconds` in config.
-- Trim is stream-copy, so cut points snap to fragment keyframes (~2s grid). A
-  frame-exact trim would need a re-encode — deliberate MVP trade-off.
-- The compressed `final.mp4` mixes system audio + mic into one AAC track;
-  `master.mp4` keeps them as separate tracks for editing.
-- Sessions that fail finalize keep their fragments on disk (`meta.json` has the
-  full segment map) — everything is rescuable by hand with ffmpeg.
-- One recording session at a time (enforced by the daemon).
+```
+~/Movies/mac-rec/<timestamp>-<title>/
+  meta.json     runs/run-001/     master.mp4     final.mp4
+  final.srt     final.vtt         final.txt
+```
 
-## Roadmap
+## Contributing
 
-- Live-rewind slider in the HUD (scrub the fragment timeline while paused,
-  instead of fixed 10s/30s steps).
-- Signed-URL uploads for private buckets (currently plain object URL).
-- Frame-exact trim via smart re-encode of the boundary GOPs only.
-- Configurable hotkeys.
+Issues and PRs welcome. `swift build` to compile, `./make-app.sh` to install
+the app locally. Please keep the daemon API backward compatible — agents
+depend on it.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

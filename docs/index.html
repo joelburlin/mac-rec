@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mac-rec — the macOS screen recorder your agent can drive</title>
+<meta name="description" content="Open-source macOS screen recorder with live rewind, auto-captions and AI re-narration. Every verb is a hotkey, a CLI command and a REST call — so you and your agent share one recording.">
+<meta property="og:title" content="mac-rec — the screen recorder your agent can drive">
+<meta property="og:description" content="ScreenCaptureKit capture, live rewind, captions, AI re-narration. One daemon, two operators.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#07080A; --panel:#0E1013; --panel-2:#14171C; --line:#1F242B;
+  --text:#E7E4DF; --muted:#8B939E; --dim:#5D656F;
+  --rec:#FF3B30; --agent:#3FD8C8; --amber:#FFB020;
+  --display:'Martian Mono',ui-monospace,monospace;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --maxw:1120px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--ink); color:var(--text); font-family:var(--sans);
+  font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+/* fine engineering grid + grain */
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.5;
+  background-image:
+    linear-gradient(to right,rgba(255,255,255,.022) 1px,transparent 1px),
+    linear-gradient(to bottom,rgba(255,255,255,.022) 1px,transparent 1px);
+  background-size:56px 56px;
+  mask-image:radial-gradient(ellipse 90% 60% at 50% 0%,#000 20%,transparent 75%);
+}
+body::after{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:1; opacity:.16;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+}
+.wrap{position:relative; z-index:2; max-width:var(--maxw); margin:0 auto; padding:0 28px}
+a{color:inherit}
+h1,h2,h3{font-family:var(--display); font-weight:800; letter-spacing:-.03em; line-height:1.06; margin:0}
+code,kbd{font-family:var(--mono)}
+
+/* ── nav ── */
+nav{position:sticky; top:0; z-index:40; backdrop-filter:blur(14px);
+  background:color-mix(in srgb,var(--ink) 86%,transparent); border-bottom:1px solid var(--line)}
+nav .wrap{display:flex; align-items:center; gap:26px; height:62px}
+.brand{font-family:var(--display); font-weight:800; font-size:15px; letter-spacing:-.04em;
+  display:flex; align-items:center; gap:9px; text-decoration:none}
+.brand .dot{width:9px; height:9px; border-radius:50%; background:var(--rec);
+  box-shadow:0 0 12px var(--rec); animation:blink 2.6s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+nav .spacer{flex:1}
+nav a.nl{font-family:var(--mono); font-size:13px; color:var(--muted); text-decoration:none; transition:color .2s}
+nav a.nl:hover{color:var(--text)}
+.ghbtn{font-family:var(--mono); font-size:13px; text-decoration:none; color:var(--ink);
+  background:var(--text); padding:7px 14px; border-radius:6px; font-weight:500; transition:transform .18s, background .18s}
+.ghbtn:hover{transform:translateY(-1px); background:#fff}
+@media(max-width:720px){nav a.nl{display:none}}
+
+/* ── hero ── */
+header{padding:96px 0 72px; position:relative}
+.eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--dim); display:flex; gap:14px; align-items:center; margin-bottom:26px}
+.eyebrow .pipe{width:26px; height:1px; background:var(--line)}
+h1{font-size:clamp(38px,7.2vw,76px)}
+h1 .rec{color:var(--rec)}
+h1 .ag{color:var(--agent)}
+.lede{font-size:clamp(17px,2vw,20px); color:var(--muted); max-width:60ch; margin:26px 0 0}
+.lede strong{color:var(--text); font-weight:500}
+.cta{display:flex; flex-wrap:wrap; gap:14px; margin-top:38px; align-items:center}
+.install{display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--line);
+  border-radius:8px; padding:12px 16px; font-family:var(--mono); font-size:13.5px}
+.install .pr{color:var(--rec)}
+.install button{background:none; border:0; color:var(--dim); cursor:pointer; font-family:var(--mono); font-size:12px; padding:0 0 0 6px}
+.install button:hover{color:var(--text)}
+.reveal{opacity:0; transform:translateY(18px); transition:opacity .7s cubic-bezier(.2,.7,.3,1), transform .7s cubic-bezier(.2,.7,.3,1)}
+.reveal.in{opacity:1; transform:none}
+
+/* ── the pill (the product's own HUD) ── */
+.stage{margin-top:64px; border:1px solid var(--line); border-radius:14px; background:
+  radial-gradient(120% 140% at 50% 0%,#171B21 0%,#0C0E11 60%); padding:54px 24px; position:relative; overflow:hidden}
+.stage .label{position:absolute; top:14px; left:18px; font-family:var(--mono); font-size:11px;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--dim)}
+.pill{margin:0 auto; width:min(340px,92%); display:flex; align-items:center; gap:14px;
+  background:rgba(28,32,38,.92); border:1px solid #2A3038; border-radius:13px; padding:11px 17px;
+  box-shadow:0 20px 50px -12px rgba(0,0,0,.85), inset 0 1px 0 rgba(255,255,255,.05)}
+.pill .rdot{width:10px; height:10px; border-radius:50%; background:var(--rec); box-shadow:0 0 10px var(--rec);
+  animation:blink 2.2s ease-in-out infinite; flex:none}
+.pill .time{font-family:var(--mono); font-weight:500; font-size:15px; letter-spacing:.02em; min-width:62px}
+.meter{display:flex; align-items:center; gap:6px; flex:1}
+.meter .mic{font-size:12px; color:var(--muted)}
+.meter .bars{display:flex; gap:2.5px; height:13px; align-items:flex-end; flex:1}
+.meter .bars i{flex:1; background:#3B444F; border-radius:1px; height:22%; transform-origin:bottom;
+  animation:lvl 1.5s ease-in-out infinite}
+.meter .bars i:nth-child(n+7){background:var(--amber)}
+.meter .bars i:nth-child(n+10){background:var(--rec)}
+.meter .bars i:nth-child(-n+6){background:#4ED17F}
+.meter .bars i:nth-child(1){animation-delay:.0s}.meter .bars i:nth-child(2){animation-delay:.09s}
+.meter .bars i:nth-child(3){animation-delay:.18s}.meter .bars i:nth-child(4){animation-delay:.27s}
+.meter .bars i:nth-child(5){animation-delay:.36s}.meter .bars i:nth-child(6){animation-delay:.45s}
+.meter .bars i:nth-child(7){animation-delay:.54s}.meter .bars i:nth-child(8){animation-delay:.63s}
+.meter .bars i:nth-child(9){animation-delay:.72s}.meter .bars i:nth-child(10){animation-delay:.81s}
+.meter .bars i:nth-child(11){animation-delay:.9s}.meter .bars i:nth-child(12){animation-delay:.99s}
+@keyframes lvl{0%,100%{height:18%}30%{height:85%}55%{height:42%}75%{height:70%}}
+.pill .btns{display:flex; gap:11px; color:var(--muted); font-size:13px}
+.pill .btns span{cursor:default; transition:color .2s}
+.pill .btns span:hover{color:var(--text)}
+.stage .caption{text-align:center; font-family:var(--mono); font-size:12px; color:var(--dim); margin-top:26px}
+
+/* ── sections ── */
+section{padding:96px 0; border-top:1px solid var(--line); position:relative}
+.sec-head{display:flex; align-items:baseline; gap:16px; margin-bottom:14px}
+.sec-num{font-family:var(--mono); font-size:12px; color:var(--dim); letter-spacing:.1em}
+h2{font-size:clamp(26px,3.6vw,40px)}
+.sec-sub{color:var(--muted); max-width:62ch; margin:18px 0 46px; font-size:16.5px}
+
+/* two operators */
+.lanes{display:grid; grid-template-columns:1fr auto 1fr; gap:22px; align-items:stretch}
+@media(max-width:860px){.lanes{grid-template-columns:1fr; gap:16px}}
+.lane{border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:24px}
+.lane.h{border-color:color-mix(in srgb,var(--rec) 34%,var(--line))}
+.lane.a{border-color:color-mix(in srgb,var(--agent) 34%,var(--line))}
+.lane h3{font-size:13px; font-family:var(--mono); font-weight:500; letter-spacing:.14em; text-transform:uppercase; margin-bottom:16px}
+.lane.h h3{color:var(--rec)} .lane.a h3{color:var(--agent)}
+.lane ul{list-style:none; margin:0; padding:0; font-family:var(--mono); font-size:13px; color:var(--muted)}
+.lane li{padding:7px 0; border-bottom:1px dashed #191E24}
+.lane li:last-child{border:0}
+.lane li b{color:var(--text); font-weight:500}
+.hub{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:0 8px}
+.hub .box{border:1px solid var(--line); background:var(--panel-2); border-radius:10px; padding:16px 18px;
+  font-family:var(--mono); font-size:12.5px; text-align:center; line-height:1.5}
+.hub .box b{color:var(--text)}
+.hub .arrows{color:var(--dim); font-family:var(--mono); font-size:18px}
+@media(max-width:860px){.hub .arrows{transform:rotate(90deg)}}
+
+/* fragment strip */
+.frag{border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:30px 26px}
+.frag .row{display:flex; gap:4px; height:52px; align-items:stretch; margin-bottom:16px}
+.frag .row b{flex:1; border-radius:3px; background:linear-gradient(180deg,#2A323C,#1C222A);
+  border:1px solid #333C47; animation:grow .5s ease-out backwards}
+.frag .row b.gone{background:linear-gradient(180deg,rgba(255,59,48,.22),rgba(255,59,48,.06));
+  border-color:color-mix(in srgb,var(--rec) 45%,transparent); animation:drop 2.6s ease-in-out infinite}
+@keyframes grow{from{transform:scaleY(.2); opacity:0}to{transform:scaleY(1); opacity:1}}
+@keyframes drop{0%,42%{opacity:1; transform:translateY(0)}60%,88%{opacity:0; transform:translateY(14px)}100%{opacity:1}}
+.frag .axis{display:flex; justify-content:space-between; font-family:var(--mono); font-size:11.5px; color:var(--dim)}
+.frag .note{font-family:var(--mono); font-size:12.5px; color:var(--muted); margin-top:20px; padding-top:18px; border-top:1px solid var(--line)}
+.frag .note em{color:var(--rec); font-style:normal}
+
+/* features */
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(268px,1fr)); gap:1px; background:var(--line);
+  border:1px solid var(--line); border-radius:12px; overflow:hidden}
+.cell{background:var(--panel); padding:28px 24px; transition:background .25s}
+.cell:hover{background:var(--panel-2)}
+.cell .k{font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); margin-bottom:12px}
+.cell h3{font-size:17px; letter-spacing:-.02em; margin-bottom:9px}
+.cell p{margin:0; color:var(--muted); font-size:14.5px; line-height:1.62}
+
+/* code */
+.code{background:#0B0D10; border:1px solid var(--line); border-radius:12px; overflow:hidden}
+.code .bar{display:flex; align-items:center; gap:7px; padding:11px 15px; border-bottom:1px solid var(--line); background:var(--panel)}
+.code .bar i{width:9px; height:9px; border-radius:50%; background:#2C333C}
+.code .bar span{font-family:var(--mono); font-size:11.5px; color:var(--dim); margin-left:8px}
+.code pre{margin:0; padding:22px 20px; overflow-x:auto; font-family:var(--mono); font-size:13.2px; line-height:1.85}
+.c-cm{color:var(--dim)} .c-pr{color:var(--rec)} .c-fn{color:var(--agent)} .c-st{color:var(--amber)} .c-tx{color:var(--text)}
+.two{display:grid; grid-template-columns:1fr 1fr; gap:22px}
+@media(max-width:860px){.two{grid-template-columns:1fr}}
+
+/* api table */
+table{width:100%; min-width:520px; border-collapse:collapse; font-family:var(--mono); font-size:13px}
+th,td{text-align:left; padding:13px 14px; border-bottom:1px solid var(--line)}
+th{color:var(--dim); font-weight:500; font-size:11px; letter-spacing:.13em; text-transform:uppercase}
+td:first-child{color:var(--agent); white-space:nowrap}
+td:last-child{color:var(--muted)}
+tr:last-child td{border-bottom:0}
+
+/* footer */
+footer{border-top:1px solid var(--line); padding:56px 0 72px}
+.fgrid{display:flex; flex-wrap:wrap; gap:26px; align-items:center; justify-content:space-between}
+footer p{margin:0; font-family:var(--mono); font-size:12.5px; color:var(--dim)}
+footer a{color:var(--muted); text-decoration:none; font-family:var(--mono); font-size:12.5px; margin-left:22px}
+footer a:hover{color:var(--text)}
+</style>
+<noscript><style>.reveal{opacity:1!important;transform:none!important}</style></noscript>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="dot"></span>mac-rec</a>
+    <div class="spacer"></div>
+    <a class="nl" href="#operators">Operators</a>
+    <a class="nl" href="#rewind">Rewind</a>
+    <a class="nl" href="#agents">Agents</a>
+    <a class="nl" href="#api">API</a>
+    <a class="ghbtn" href="https://github.com/joelburlin/mac-rec">GitHub ↗</a>
+  </div>
+</nav>
+
+<header id="top">
+  <div class="wrap">
+    <div class="eyebrow reveal"><span>MIT licensed</span><span class="pipe"></span><span>macOS · Swift · ScreenCaptureKit</span></div>
+    <h1 class="reveal">The screen recorder<br>your <span class="ag">agent</span> can <span class="rec">drive</span>.</h1>
+    <p class="lede reveal">Every verb is a hotkey, a CLI command, and a localhost REST call — against one daemon. <strong>Your agent starts the take; you stop it from the floating pill.</strong> Neither has to know the other exists.</p>
+    <div class="cta reveal">
+      <div class="install"><span class="pr">$</span><span id="cmd">git clone https://github.com/joelburlin/mac-rec</span><button onclick="copyCmd(this)">copy</button></div>
+      <a class="ghbtn" href="https://github.com/joelburlin/mac-rec#install">Install guide →</a>
+    </div>
+
+    <div class="stage reveal">
+      <div class="label">the floating pill — excluded from its own recording</div>
+      <div class="pill">
+        <span class="rdot"></span>
+        <span class="time" id="t">0:42.18</span>
+        <span class="meter">
+          <span class="mic">🎙</span>
+          <span class="bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        </span>
+        <span class="btns"><span>⏸</span><span>⏪</span><span>■</span></span>
+      </div>
+      <div class="caption">click the meter to mute mid-take · ⌥⌘R record · ⌥⌘← rewind · ⌥⌘S save</div>
+    </div>
+  </div>
+</header>
+
+<section id="operators">
+  <div class="wrap">
+    <div class="sec-head reveal"><span class="sec-num">01</span><h2>One daemon, two operators</h2></div>
+    <p class="sec-sub reveal">An agent that can <em>see</em> your screen still can't <em>show</em> you one — GUI recorders expose no API. mac-rec inverts that: the interface is a thin shell over a documented local API, so both operators drive the same session.</p>
+    <div class="lanes reveal">
+      <div class="lane h">
+        <h3>Human</h3>
+        <ul>
+          <li><b>⌥⌘R</b> start · pause · resume</li>
+          <li><b>⌥⌘A</b> drag a region</li>
+          <li><b>⌥⌘←</b> rewind ten seconds</li>
+          <li><b>⌥⌘S</b> stop &amp; save</li>
+          <li><b>menu bar</b> displays, windows, mics</li>
+        </ul>
+      </div>
+      <div class="hub">
+        <div class="arrows">→</div>
+        <div class="box"><b>127.0.0.1:5757</b><br>recorder daemon<br><span style="color:var(--dim)">ScreenCaptureKit</span></div>
+        <div class="arrows">←</div>
+      </div>
+      <div class="lane a">
+        <h3>Agent</h3>
+        <ul>
+          <li><b>mac-rec start --json</b></li>
+          <li><b>POST /rewind</b> {"seconds":10}</li>
+          <li><b>GET /status</b> single source of truth</li>
+          <li><b>mac-rec stop --captions bold</b></li>
+          <li><b>skill</b> drop-in for Claude Code</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="rewind">
+  <div class="wrap">
+    <div class="sec-head reveal"><span class="sec-num">02</span><h2>Live rewind, zero re-encoding</h2></div>
+    <p class="sec-sub reveal">Recording streams straight into ~2-second fragmented MP4 chunks on disk. Rewinding just deletes trailing fragments — no seeking, no re-encoding, no waiting. Resume opens a new run; stop concatenates whatever survived, losslessly.</p>
+    <div class="frag reveal">
+      <div class="row" id="frow"></div>
+      <div class="axis"><span>00:00</span><span>fragment stream · 2s each</span><span>00:42</span></div>
+      <div class="note">$ mac-rec pause &amp;&amp; mac-rec rewind 10 &amp;&amp; mac-rec resume<br><em>⏪ dropped 10.0s (5 fragments) — 0:32.18 kept</em></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head reveal"><span class="sec-num">03</span><h2>Finishes the video, not just the capture</h2></div>
+    <p class="sec-sub reveal">Stop runs a real post pipeline: lossless concat, hardware HEVC, transcription, captions, optional AI narration — and keeps the untouched master beside it.</p>
+    <div class="grid reveal">
+      <div class="cell"><div class="k">Captions</div><h3>Five burn-in templates</h3><p>whisper.cpp with word timings, rendered natively with CoreText — classic, boxed, bold, karaoke, minimal. Correct bidi, so Hebrew and Arabic render properly. SRT, VTT and TXT sidecars always.</p></div>
+      <div class="cell"><div class="k">Voice</div><h3>AI re-narration that stays in sync</h3><p>Replace recorded narration with an ElevenLabs voice. Each sentence is spoken separately, re-anchored to its original timestamp and speed-fit to its slot — then captions are rebuilt from where the audio actually landed.</p></div>
+      <div class="cell"><div class="k">Audio</div><h3>A mic that survives reality</h3><p>Auto-gain rescues quiet webcam mics, denoise and speech-leveling clean the take, and a live level meter means you never discover the silence in post.</p></div>
+      <div class="cell"><div class="k">Capture</div><h3>Display, window, or region</h3><p>Pick a monitor, a single window by id or name, or drag a region. System audio and microphone are captured as separate tracks, so they can be mixed — or replaced — later.</p></div>
+      <div class="cell"><div class="k">Encode</div><h3>Hardware HEVC</h3><p>VideoToolbox on Apple Silicon: a seven-second 1080p take compresses from 2.2 MB to 423 KB with no visible loss. The lossless master is always kept.</p></div>
+      <div class="cell"><div class="k">Resilience</div><h3>Nothing eats a take</h3><p>Displays stay awake while recording, a killed capture auto-pauses instead of zombie-recording, and any failed save is rebuildable from the fragments still on disk.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="agents">
+  <div class="wrap">
+    <div class="sec-head reveal"><span class="sec-num">04</span><h2>Agent-first, not agent-bolted-on</h2></div>
+    <p class="sec-sub reveal">Drop the skill into Claude Code and "record a walkthrough of this bug" just works — the agent checks state, records, rewinds its own mistakes, and hands back a captioned MP4.</p>
+    <div class="two reveal">
+      <div class="code">
+        <div class="bar"><i></i><i></i><i></i><span>install the skill</span></div>
+<pre><span class="c-pr">$</span> <span class="c-tx">cp -r skills/mac-rec ~/.claude/skills/</span>
+
+<span class="c-cm"># then, in any session:</span>
+<span class="c-st">"record a demo of the checkout flow
+ and caption it"</span></pre>
+      </div>
+      <div class="code">
+        <div class="bar"><i></i><i></i><i></i><span>what the agent runs</span></div>
+<pre><span class="c-pr">$</span> <span class="c-fn">mac-rec</span> status --json
+  <span class="c-cm">{"state":"idle"}</span>
+<span class="c-pr">$</span> <span class="c-fn">mac-rec</span> start --source window \
+    --query <span class="c-st">"Chrome"</span> --json
+<span class="c-cm">... drives the UI, misspeaks ...</span>
+<span class="c-pr">$</span> <span class="c-fn">mac-rec</span> pause &amp;&amp; <span class="c-fn">mac-rec</span> rewind 8
+<span class="c-pr">$</span> <span class="c-fn">mac-rec</span> resume
+<span class="c-pr">$</span> <span class="c-fn">mac-rec</span> stop --captions bold --json
+  <span class="c-cm">{"final":"…/final.mp4","srt":"…"}</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="api">
+  <div class="wrap">
+    <div class="sec-head reveal"><span class="sec-num">05</span><h2>The whole API</h2></div>
+    <p class="sec-sub reveal">Localhost only. Every CLI verb maps to one call; every call returns JSON. Errors come back as <code>{"error":"…"}</code> with a real status code.</p>
+    <div class="reveal" style="border:1px solid var(--line); border-radius:12px; overflow-x:auto; background:var(--panel)">
+      <table>
+        <tr><th>Endpoint</th><th>Body</th><th>Does</th></tr>
+        <tr><td>GET /status</td><td>—</td><td>state, elapsed, source, mic level, last event</td></tr>
+        <tr><td>POST /start</td><td>{source, display, windowID, area, mic}</td><td>begin a session</td></tr>
+        <tr><td>POST /pause</td><td>—</td><td>finish the current run; enables rewind</td></tr>
+        <tr><td>POST /rewind</td><td>{seconds}</td><td>delete trailing fragments</td></tr>
+        <tr><td>POST /resume</td><td>—</td><td>open a new run</td></tr>
+        <tr><td>POST /mic</td><td>{muted}</td><td>mute the mic mid-take</td></tr>
+        <tr><td>POST /stop</td><td>{output, captions, voiceover, trim}</td><td>finalize and return the deliverable</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap fgrid">
+    <p>MIT · built for macOS 15+ · not affiliated with Apple</p>
+    <div>
+      <a href="https://github.com/joelburlin/mac-rec">Source</a>
+      <a href="https://github.com/joelburlin/mac-rec/blob/main/skills/mac-rec/SKILL.md">Agent skill</a>
+      <a href="https://github.com/joelburlin/mac-rec/issues">Issues</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// staggered reveals
+const io=new IntersectionObserver((es)=>{es.forEach((e,i)=>{if(e.isIntersecting){
+  setTimeout(()=>e.target.classList.add('in'), i*70); io.unobserve(e.target);}})},{threshold:.12});
+document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+setTimeout(()=>document.querySelectorAll('.reveal').forEach(el=>el.classList.add('in')),2200);
+
+// hero timer keeps ticking, like a real take
+let t=42.18; const el=document.getElementById('t');
+setInterval(()=>{t+=0.04; const m=Math.floor(t/60), s=(t%60).toFixed(2).padStart(5,'0');
+  el.textContent=m+':'+s;},40);
+
+// fragment strip: 21 blocks, last 5 are the ones rewind drops
+const row=document.getElementById('frow');
+for(let i=0;i<21;i++){const b=document.createElement('b');
+  b.style.animationDelay=(i*38)+'ms';
+  if(i>=16){b.classList.add('gone'); b.style.animationDelay=(i-16)*90+'ms';}
+  row.appendChild(b);}
+
+function copyCmd(btn){navigator.clipboard.writeText(document.getElementById('cmd').textContent)
+  .then(()=>{btn.textContent='copied';setTimeout(()=>btn.textContent='copy',1600);});}
+</script>
+</body>
+</html>
