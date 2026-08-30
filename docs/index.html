@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>mac-rec — the macOS screen recorder your agent can drive</title>
+<title>mac-rec for macOS — the screen recorder your agent can drive</title>
 <meta name="description" content="Open-source macOS screen recorder with live rewind, auto-captions and AI re-narration. Every verb is a hotkey, a CLI command and a REST call — so you and your agent share one recording.">
 <meta property="og:title" content="mac-rec — the screen recorder your agent can drive">
 <meta property="og:description" content="ScreenCaptureKit capture, live rewind, captions, AI re-narration. One daemon, two operators.">
@@ -13,6 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
+  --applemask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 384 512'%3E%3Cpath d='M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z'/%3E%3C/svg%3E");
   --ink:#07080A; --panel:#0E1013; --panel-2:#14171C; --line:#1F242B;
   --text:#E7E4DF; --muted:#8B939E; --dim:#5D656F;
   --rec:#FF3B30; --agent:#3FD8C8; --amber:#FFB020;
@@ -82,6 +83,26 @@ h1 .ag{color:var(--agent)}
 .reveal{opacity:0; transform:translateY(18px); transition:opacity .7s cubic-bezier(.2,.7,.3,1), transform .7s cubic-bezier(.2,.7,.3,1)}
 .reveal.in{opacity:1; transform:none}
 
+.platform{display:inline-flex; align-items:center; gap:9px; font-family:var(--mono); font-size:12.5px;
+  color:var(--muted); border:1px solid var(--line); background:var(--panel); border-radius:999px;
+  padding:6px 15px; margin-bottom:26px}
+.apple{width:13px; height:15px; display:inline-block; background:currentColor; flex:none;
+  -webkit-mask:var(--applemask) center/contain no-repeat; mask:var(--applemask) center/contain no-repeat}
+.apple.big{width:19px; height:22px}
+.dl{display:inline-flex; align-items:center; gap:13px; text-decoration:none; color:var(--ink);
+  background:linear-gradient(180deg,#FFFFFF,#E4E2DE); padding:13px 22px; border-radius:10px;
+  font-family:var(--display); font-weight:600; font-size:15px; letter-spacing:-.02em;
+  box-shadow:0 10px 30px -10px rgba(255,255,255,.28); transition:transform .18s, box-shadow .18s}
+.dl:hover{transform:translateY(-2px); box-shadow:0 16px 40px -12px rgba(255,255,255,.4)}
+.dl-t{display:flex; flex-direction:column; line-height:1.25}
+.dl-s{font-family:var(--mono); font-weight:400; font-size:11px; color:#5A5F66; letter-spacing:0; margin-top:2px}
+.dlbtn{font-family:var(--mono); font-size:13px; text-decoration:none; color:var(--ink); background:var(--text);
+  padding:7px 14px; border-radius:6px; font-weight:500; display:inline-flex; align-items:center; gap:7px;
+  transition:transform .18s, background .18s}
+.dlbtn:hover{transform:translateY(-1px); background:#fff}
+.dlbtn .apple{width:11px; height:13px}
+.gate{font-family:var(--mono); font-size:12.5px; color:var(--dim); margin:20px 0 0; max-width:56ch}
+.gate strong{color:var(--muted); font-weight:400}
 /* ── the pill (the product's own HUD) ── */
 .stage{margin-top:64px; border:1px solid var(--line); border-radius:14px; background:
   radial-gradient(120% 140% at 50% 0%,#171B21 0%,#0C0E11 60%); padding:54px 24px; position:relative; overflow:hidden}
@@ -198,19 +219,26 @@ footer a:hover{color:var(--text)}
     <a class="nl" href="#rewind">Rewind</a>
     <a class="nl" href="#agents">Agents</a>
     <a class="nl" href="#api">API</a>
-    <a class="ghbtn" href="https://github.com/joelburlin/mac-rec">GitHub ↗</a>
+    <a class="nl" href="#install">Install</a>
+    <a class="nl" href="https://github.com/joelburlin/mac-rec">GitHub ↗</a>
+    <a class="dlbtn" href="https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg"> Download</a>
   </div>
 </nav>
 
 <header id="top">
   <div class="wrap">
-    <div class="eyebrow reveal"><span>MIT licensed</span><span class="pipe"></span><span>macOS · Swift · ScreenCaptureKit</span></div>
+    <div class="eyebrow reveal"><span>MIT licensed</span><span class="pipe"></span><span>open source</span></div>
+    <div class="platform reveal"><span class="apple"></span> for macOS 15+ · Apple silicon &amp; Intel</div>
     <h1 class="reveal">The screen recorder<br>your <span class="ag">agent</span> can <span class="rec">drive</span>.</h1>
     <p class="lede reveal">Every verb is a hotkey, a CLI command, and a localhost REST call — against one daemon. <strong>Your agent starts the take; you stop it from the floating pill.</strong> Neither has to know the other exists.</p>
     <div class="cta reveal">
+      <a class="dl" href="https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg">
+        <span class="apple big"></span>
+        <span class="dl-t">Download for macOS<span class="dl-s">Mac-Rec-0.4.0.dmg · universal · 2.2 MB</span></span>
+      </a>
       <div class="install"><span class="pr">$</span><span id="cmd">git clone https://github.com/joelburlin/mac-rec</span><button onclick="copyCmd(this)">copy</button></div>
-      <a class="ghbtn" href="https://github.com/joelburlin/mac-rec#install">Install guide →</a>
     </div>
+    <p class="gate reveal">Unnotarized open-source build — <strong>right-click → Open</strong> the first time. Requires macOS&nbsp;15 or later.</p>
 
     <div class="stage reveal">
       <div class="label">the floating pill — excluded from its own recording</div>
@@ -337,12 +365,53 @@ footer a:hover{color:var(--text)}
   </div>
 </section>
 
+<section id="install">
+  <div class="wrap">
+    <div class="sec-head reveal"><span class="sec-num">06</span><h2>Get it on your Mac</h2></div>
+    <p class="sec-sub reveal">macOS 15 (Sequoia) or later. Universal — Apple silicon and Intel. <code>ffmpeg</code> does the finalize work (<code>brew install ffmpeg</code>); add <code>whisper-cpp</code> for captions.</p>
+    <div class="two reveal">
+      <div class="code">
+        <div class="bar"><i></i><i></i><i></i><span>download the app</span></div>
+<pre><span class="c-tx">1.</span> <span class="c-fn">Download the .dmg</span> and drag
+   Mac-Rec into Applications.
+
+<span class="c-tx">2.</span> <span class="c-st">Right-click</span> Mac-Rec → <span class="c-st">Open</span> → Open.
+   <span class="c-cm"># once — the build is unnotarized,
+   # so macOS quarantines the download</span>
+
+<span class="c-tx">3.</span> Grant <span class="c-fn">Screen Recording</span> on first
+   record. One grant covers the app,
+   the CLI, and your agent.</pre>
+      </div>
+      <div class="code">
+        <div class="bar"><i></i><i></i><i></i><span>or build from source — no Gatekeeper</span></div>
+<pre><span class="c-pr">$</span> <span class="c-tx">git clone https://github.com/\
+    joelburlin/mac-rec</span>
+<span class="c-pr">$</span> <span class="c-tx">cd mac-rec</span>
+<span class="c-pr">$</span> <span class="c-fn">./setup-signing.sh</span>  <span class="c-cm"># once</span>
+<span class="c-pr">$</span> <span class="c-fn">./make-app.sh</span>       <span class="c-cm"># app + CLI</span>
+<span class="c-pr">$</span> <span class="c-tx">open /Applications/Mac-Rec.app</span>
+
+<span class="c-cm"># signing locally means permissions
+# survive every rebuild</span></pre>
+      </div>
+    </div>
+    <div style="text-align:center; margin-top:44px">
+      <a class="dl reveal" href="https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg">
+        <span class="apple big"></span>
+        <span class="dl-t">Download for macOS<span class="dl-s">Mac-Rec-0.4.0.dmg · universal · 2.2 MB</span></span>
+      </a>
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap fgrid">
     <p>MIT · built for macOS 15+ · not affiliated with Apple</p>
     <div>
       <a href="https://github.com/joelburlin/mac-rec">Source</a>
       <a href="https://github.com/joelburlin/mac-rec/blob/main/skills/mac-rec/SKILL.md">Agent skill</a>
+      <a href="https://github.com/joelburlin/mac-rec/releases">Releases</a>
       <a href="https://github.com/joelburlin/mac-rec/issues">Issues</a>
     </div>
   </div>

@@ -7,7 +7,9 @@
 ScreenCaptureKit capture · live rewind · auto-captions · AI re-narration
 One daemon, two operators: you and your agent share the same recording.
 
-[Website](https://joelburlin.github.io/mac-rec/) · [Agent skill](skills/mac-rec/SKILL.md) · MIT
+[**⬇ Download for macOS**](https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg) · [Website](https://joelburlin.github.io/mac-rec/) · [Agent skill](skills/mac-rec/SKILL.md) · MIT
+
+*macOS 15 (Sequoia) or later · universal (Apple silicon &amp; Intel) · 2.2 MB*
 
 </div>
 
@@ -60,8 +62,22 @@ take over mid-take.
 
 ## Install
 
-Requires macOS 15+, Swift 6, and `ffmpeg`. `whisper-cpp` for captions,
-`gcloud` only if you want uploads.
+**macOS 15 (Sequoia) or later.** Needs `ffmpeg` for the finalize pipeline
+(`brew install ffmpeg`), `whisper-cpp` for captions, `gcloud` only for uploads.
+
+### Download the app
+
+[**Mac-Rec-0.4.0.dmg**](https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg) — universal, 2.2 MB. Drag it into Applications, then
+**right-click → Open** the first time.
+
+> The build is open source and unnotarized (notarizing needs a paid Apple
+> Developer ID), so macOS quarantines the download. That right-click is needed
+> once. If macOS still refuses:
+> `xattr -dr com.apple.quarantine /Applications/Mac-Rec.app`
+
+### Or build it (skips Gatekeeper entirely)
+
+Requires Swift 6 / Xcode command line tools.
 
 ```bash
 git clone https://github.com/joelburlin/mac-rec.git && cd mac-rec
