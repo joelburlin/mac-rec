@@ -2,3 +2,4 @@
 .swiftpm/
 *.log
 .DS_Store
+dist/
