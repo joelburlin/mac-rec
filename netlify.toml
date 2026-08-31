@@ -1,0 +1,30 @@
+# Static site — no build step. The landing page lives in docs/.
+[build]
+  publish = "docs"
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# The DMG is served from GitHub Releases; keep a short, stable download URL.
+[[redirects]]
+  from = "/download"
+  to = "https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/github"
+  to = "https://github.com/joelburlin/mac-rec"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/skill"
+  to = "https://github.com/joelburlin/mac-rec/blob/main/skills/mac-rec/SKILL.md"
+  status = 302
+  force = true
