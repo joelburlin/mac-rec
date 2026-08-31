@@ -7,7 +7,7 @@
 ScreenCaptureKit capture · live rewind · auto-captions · AI re-narration
 One daemon, two operators: you and your agent share the same recording.
 
-[**⬇ Download for macOS**](https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg) · [Website](https://joelburlin.github.io/mac-rec/) · [Agent skill](skills/mac-rec/SKILL.md) · MIT
+[**⬇ Download for macOS**](https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg) · [Website](https://screenrecording.dev/) · [Agent skill](skills/mac-rec/SKILL.md) · MIT
 
 *macOS 15 (Sequoia) or later · universal (Apple silicon &amp; Intel) · 2.2 MB*
 

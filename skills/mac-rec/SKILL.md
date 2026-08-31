@@ -16,7 +16,7 @@ mac-rec status --json     # {"state":"idle|recording|paused|finalizing", ...}
 ```
 
 `state` is the source of truth — never assume. If the binary is missing, tell
-the human to install it (https://github.com/joelburlin/mac-rec); do not try to
+the human to install it (https://screenrecording.dev); do not try to
 record with `ffmpeg` or `screencapture` instead.
 
 ## The loop
