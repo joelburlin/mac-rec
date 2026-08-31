@@ -7,7 +7,7 @@
 ScreenCaptureKit capture · live rewind · auto-captions · AI re-narration
 One daemon, two operators: you and your agent share the same recording.
 
-[**⬇ Download for macOS**](https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg) · [Website](https://screenrecording.dev/) · [Agent skill](skills/mac-rec/SKILL.md) · MIT
+[**⬇ Install**](https://screenrecording.dev/#install) · [Website](https://screenrecording.dev/) · [Agent skill](skills/mac-rec/SKILL.md) · MIT
 
 *macOS 15 (Sequoia) or later · universal (Apple silicon &amp; Intel) · 2.2 MB*
 
@@ -65,14 +65,26 @@ take over mid-take.
 **macOS 15 (Sequoia) or later.** Needs `ffmpeg` for the finalize pipeline
 (`brew install ffmpeg`), `whisper-cpp` for captions, `gcloud` only for uploads.
 
-### Download the app
+### Install (recommended)
 
-[**Mac-Rec-0.4.0.dmg**](https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg) — universal, 2.2 MB. Drag it into Applications, then
-**right-click → Open** the first time.
+```bash
+curl -fsSL https://screenrecording.dev/install.sh | bash
+```
 
-> The build is open source and unnotarized (notarizing needs a paid Apple
-> Developer ID), so macOS quarantines the download. That right-click is needed
-> once. If macOS still refuses:
+Downloads the latest release, installs it to `/Applications`, clears the
+quarantine flag macOS puts on downloads, links the `mac-rec` CLI, and launches
+the app.
+
+### Or grab the .dmg
+
+[**Mac-Rec.dmg**](https://github.com/joelburlin/mac-rec/releases/latest) — universal, ~2.2 MB.
+
+> **macOS will block it.** The build is open source and unnotarized
+> (notarizing requires a paid Apple Developer account), so macOS 15 quarantines
+> the download and says *"Apple could not verify Mac-Rec is free of malware."*
+> Open **System Settings → Privacy & Security**, scroll down and click
+> **Open Anyway**. (On macOS 15 the old right-click → Open bypass no longer
+> works.) Or run:
 > `xattr -dr com.apple.quarantine /Applications/Mac-Rec.app`
 
 ### Or build it (skips Gatekeeper entirely)

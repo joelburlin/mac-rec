@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         self.hotkeys = hotkeys
 
+        Updater.check(silent: true)  // at most once a day, quiet unless there's news
         proxy.ensureDaemon()  // spawn the daemon under this app's TCC identity
         proxy.startPolling()
     }

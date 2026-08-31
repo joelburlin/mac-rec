@@ -1,6 +1,6 @@
 import Foundation
 
-let macRecVersion = "0.4.0"
+let macRecVersion = "0.5.0"
 
 struct Config: Codable {
     var port: Int = 5757
@@ -111,6 +111,9 @@ struct Config: Codable {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
         try enc.encode(self).write(to: Config.configFile)
+        // The file can hold an API key; don't leave it world-readable.
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: Config.configFile.path)
     }
 
     var outputRootURL: URL {

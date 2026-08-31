@@ -182,6 +182,14 @@ h2{font-size:clamp(26px,3.6vw,40px)}
 .cell h3{font-size:17px; letter-spacing:-.02em; margin-bottom:9px}
 .cell p{margin:0; color:var(--muted); font-size:14.5px; line-height:1.62}
 
+.gatebox{border:1px solid color-mix(in srgb,var(--amber) 26%,var(--line)); border-radius:12px;
+  background:color-mix(in srgb,var(--amber) 4%,var(--panel)); padding:26px 26px 20px; margin-top:26px}
+.gatebox h3{font-size:15px; margin-bottom:12px; color:var(--amber)}
+.gatebox p{margin:0 0 12px; color:var(--muted); font-size:14.5px; line-height:1.62}
+.gatebox strong{color:var(--text); font-weight:500}
+.gatebox em{color:var(--text); font-style:normal}
+.gatebox code{background:#0B0D10; border:1px solid var(--line); border-radius:5px; padding:2px 7px; font-size:12.5px}
+.gatebox .src{margin:0; color:var(--dim); font-size:13px}
 /* code */
 .code{background:#0B0D10; border:1px solid var(--line); border-radius:12px; overflow:hidden}
 .code .bar{display:flex; align-items:center; gap:7px; padding:11px 15px; border-bottom:1px solid var(--line); background:var(--panel)}
@@ -238,7 +246,7 @@ footer a:hover{color:var(--text)}
       </a>
       <div class="install"><span class="pr">$</span><span id="cmd">git clone https://github.com/joelburlin/mac-rec</span><button onclick="copyCmd(this)">copy</button></div>
     </div>
-    <p class="gate reveal">Unnotarized open-source build — <strong>right-click → Open</strong> the first time. Requires macOS&nbsp;15 or later.</p>
+    <p class="gate reveal">Requires macOS&nbsp;15 or later. The build is open source and unnotarized, so macOS blocks the downloaded app — the <strong>one-line install below</strong> clears that for you.</p>
 
     <div class="stage reveal">
       <div class="label">the floating pill — excluded from its own recording</div>
@@ -371,17 +379,15 @@ footer a:hover{color:var(--text)}
     <p class="sec-sub reveal">macOS 15 (Sequoia) or later. Universal — Apple silicon and Intel. <code>ffmpeg</code> does the finalize work (<code>brew install ffmpeg</code>); add <code>whisper-cpp</code> for captions.</p>
     <div class="two reveal">
       <div class="code">
-        <div class="bar"><i></i><i></i><i></i><span>download the app</span></div>
-<pre><span class="c-tx">1.</span> <span class="c-fn">Download the .dmg</span> and drag
-   Mac-Rec into Applications.
+        <div class="bar"><i></i><i></i><i></i><span>install — recommended</span></div>
+<pre><span class="c-pr">$</span> <span class="c-tx">curl -fsSL https://screenrecording.dev/install.sh | bash</span>
 
-<span class="c-tx">2.</span> <span class="c-st">Right-click</span> Mac-Rec → <span class="c-st">Open</span> → Open.
-   <span class="c-cm"># once — the build is unnotarized,
-   # so macOS quarantines the download</span>
+<span class="c-cm"># downloads the latest release, installs to
+# /Applications, clears the quarantine flag
+# macOS sets on downloads, links the CLI,
+# and launches the app.</span>
 
-<span class="c-tx">3.</span> Grant <span class="c-fn">Screen Recording</span> on first
-   record. One grant covers the app,
-   the CLI, and your agent.</pre>
+<span class="c-cm"># prefer the .dmg? see "if macOS blocks it" below</span></pre>
       </div>
       <div class="code">
         <div class="bar"><i></i><i></i><i></i><span>or build from source — no Gatekeeper</span></div>
@@ -395,6 +401,13 @@ footer a:hover{color:var(--text)}
 <span class="c-cm"># signing locally means permissions
 # survive every rebuild</span></pre>
       </div>
+    </div>
+    <div class="gatebox reveal">
+      <h3>If macOS blocks it</h3>
+      <p>Notarizing an app requires a paid Apple Developer account, so this open-source build isn't notarized. macOS 15 quarantines it and shows <em>"Apple could not verify Mac-Rec is free of malware."</em> Two ways through:</p>
+      <p><strong>The installer above</strong> removes the quarantine flag for you — nothing else to do.</p>
+      <p><strong>If you installed the .dmg by hand:</strong> open <strong>System Settings → Privacy &amp; Security</strong>, scroll to the bottom, and click <strong>Open Anyway</strong> next to Mac-Rec. (On macOS 15 the old right-click → Open trick no longer works.) Or run <code>xattr -dr com.apple.quarantine /Applications/Mac-Rec.app</code>.</p>
+      <p class="src">Building from source avoids all of this — the app is then signed locally by you.</p>
     </div>
     <div style="text-align:center; margin-top:44px">
       <a class="dl reveal" href="/download">

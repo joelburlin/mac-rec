@@ -20,6 +20,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     /// (id, name) ElevenLabs voices, fetched lazily on first menu open.
     private var voices: [(String, String)] = []
     private var voicesLoaded = false
+    /// Retained so the window survives being closed and reopened.
+    private var settingsWindow: SettingsWindowController?
 
     /// (index in SCShareableContent.displays order, label)
     private var displays: [(Int, String)] = []
@@ -138,6 +140,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(makeItem("Open Recordings Folder", #selector(openFolder)))
+        let settings = makeItem("Settings…", #selector(openSettings))
+        settings.keyEquivalent = ","
+        settings.keyEquivalentModifierMask = [.command]
+        menu.addItem(settings)
+        menu.addItem(makeItem("Check for Updates…", #selector(checkUpdates)))
         menu.addItem(disabled(
             "Hotkeys: \(HotkeyMap.display(.toggle)) record/pause · \(HotkeyMap.display(.area)) area · "
             + "\(HotkeyMap.display(.rewind)) rewind · \(HotkeyMap.display(.stop)) save"
@@ -398,6 +405,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         UserDefaults.standard.set(!cur, forKey: k)
         if !menuOpen { rebuildMenu(for: proxy.status) }
     }
+
+    @objc private func openSettings() {
+        if settingsWindow == nil { settingsWindow = SettingsWindowController() }
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.showWindow(nil)
+        settingsWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func checkUpdates() { Updater.check(silent: false) }
 
     @objc private func openFolder() {
         NSWorkspace.shared.open(Config.load().outputRootURL)

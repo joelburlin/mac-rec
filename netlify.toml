@@ -13,7 +13,7 @@
 # The DMG is served from GitHub Releases; keep a short, stable download URL.
 [[redirects]]
   from = "/download"
-  to = "https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.4.0.dmg"
+  to = "https://github.com/joelburlin/mac-rec/releases/latest/download/Mac-Rec-0.5.0.dmg"
   status = 302
   force = true
 

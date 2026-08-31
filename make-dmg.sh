@@ -33,18 +33,25 @@ codesign --verify --strict "$APP" && echo "signed (ad-hoc)"
 cp -R "$APP" "$DIST/dmg/"
 ln -s /Applications "$DIST/dmg/Applications"
 cat > "$DIST/dmg/FIRST LAUNCH.txt" <<'TXT'
-Mac-Rec is open source and unnotarized (no paid Apple Developer ID), so
-macOS quarantines it on download.
+Mac-Rec is open source and unnotarized (notarizing requires a paid Apple
+Developer account), so macOS quarantines it and refuses to open it.
 
-To open it the first time:
+To open it:
   1. Drag Mac-Rec into Applications.
-  2. RIGHT-CLICK Mac-Rec in Applications → Open → Open.
+  2. Try to open it — macOS will block it.
+  3. Open System Settings > Privacy & Security, scroll to the bottom,
+     and click "Open Anyway" next to Mac-Rec.
 
-That right-click is required only once. If macOS still refuses, run:
+  (On macOS 15 the old right-click > Open trick no longer works.)
+
+Or skip all of it with the installer, which clears the flag for you:
+  curl -fsSL https://screenrecording.dev/install.sh | bash
+
+Or from Terminal:
   xattr -dr com.apple.quarantine /Applications/Mac-Rec.app
 
 Then grant Screen Recording (and Microphone, for narration) in
-System Settings → Privacy & Security. Details: https://github.com/joelburlin/mac-rec
+System Settings > Privacy & Security. Docs: https://screenrecording.dev
 TXT
 
 hdiutil create -volname "Mac-Rec $VERSION" -srcfolder "$DIST/dmg" \
